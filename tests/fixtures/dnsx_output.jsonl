@@ -1,0 +1,2 @@
+{"host": "api.example.com", "a": ["93.184.216.34"], "status_code": "NOERROR"}
+{"host": "dev.example.com", "a": ["93.184.216.35"], "status_code": "NOERROR"}

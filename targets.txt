@@ -1,0 +1,5 @@
+# Target Domains Manifest
+# Comments and blank lines are ignored.
+example.com
+api.example.com
+test.example.com

@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "input": {"FUZZ": "admin"},
+      "status": 200,
+      "url": "https://api.example.com/admin"
+    },
+    {
+      "input": {"FUZZ": "login"},
+      "status": 200,
+      "url": "https://api.example.com/login"
+    }
+  ]
+}

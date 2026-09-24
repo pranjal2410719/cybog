@@ -1,0 +1,79 @@
+pipeline:
+  profile: standard
+
+targets:
+  input: ./targets.txt
+  batch_size: 100
+
+authorization:
+  required: true
+  scope_file: ./authorized_scope.txt
+
+workers:
+  subfinder: 4
+  dnsx: 8
+  httpx: 8
+  naabu: 4
+  katana: 4
+  ffuf: 2
+  nuclei: 4
+
+queues:
+  max_size: 100
+
+tools:
+  subfinder:
+    enabled: true
+    binary: subfinder
+    timeout: 300
+    extra_args: []
+
+  dnsx:
+    enabled: true
+    binary: dnsx
+    timeout: 300
+    extra_args: []
+
+  httpx:
+    enabled: true
+    binary: httpx
+    timeout: 300
+    extra_args: []
+
+  naabu:
+    enabled: true
+    binary: naabu
+    timeout: 600
+    extra_args: []
+
+  katana:
+    enabled: true
+    binary: katana
+    timeout: 600
+    extra_args: []
+
+  ffuf:
+    enabled: true
+    binary: ffuf
+    timeout: 600
+    wordlist: ./config/wordlists/common.txt
+    extra_args: []
+
+  nuclei:
+    enabled: true
+    binary: nuclei
+    timeout: 900
+    severity: low,medium,high,critical
+    extra_args: []
+
+execution:
+  continue_on_error: true
+  retry_failed: 2
+  resume: true
+
+output:
+  root: ./reports
+
+logging:
+  level: INFO
+  format: json

@@ -1,0 +1,7 @@
+# Authorized testing scope manifest
+# Format:
+#   example.com         <- matches example.com and *.example.com
+#   *.target.org        <- wildcard glob
+#   !excluded.target.org <- explicit exclusion (! prefix)
+*.example.com
+example.com

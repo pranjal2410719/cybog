@@ -1,0 +1,3 @@
+{"request": {"endpoint": "https://api.example.com/v1/users"}}
+{"request": {"endpoint": "https://api.example.com/v1/auth"}}
+{"endpoint": "https://api.example.com/v1/products"}
