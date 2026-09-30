@@ -64,14 +64,24 @@ class KatanaAdapter(ToolAdapter):
 
     def parse_output(self, tool_result: ToolResult, stage_dir: Path) -> list[dict]:
         raw_file = stage_dir / "raw.jsonl"
-        text = raw_file.read_text(encoding="utf-8") if raw_file.exists() else tool_result.stdout
-        if not text.strip():
-            return []
-        records = self._parse_jsonl(text, _log)
-        if records:
+        records: list[dict] = []
+        if raw_file.exists():
+            with open(raw_file, "r", encoding="utf-8", errors="replace") as f:
+                for i, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        records.append({"endpoint": line})
+                    if len(records) >= 5000:  # Cap at 5000 records to prevent memory exhaust
+                        break
             return records
-        # Fallback: plain URLs
-        return [{"endpoint": line.strip()} for line in text.splitlines() if line.strip()]
+
+        if tool_result.stdout.strip():
+            return self._parse_jsonl(tool_result.stdout[:50000], _log)
+        return []
 
     def normalize_output(self, parsed: list[dict], job: StageJob) -> NormalizedOutput:
         out = NormalizedOutput()
@@ -91,5 +101,7 @@ class KatanaAdapter(ToolAdapter):
             out.endpoints.append(
                 Endpoint(url=url, target_id=job.target_id, source="katana")
             )
+            if len(out.endpoints) >= 1000:  # Cap normalized state endpoints per target
+                break
         out.raw_count = len(parsed)
         return out

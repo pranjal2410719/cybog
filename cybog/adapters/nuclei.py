@@ -65,7 +65,7 @@ class NucleiAdapter(ToolAdapter):
             self.binary,
             "-l", str(input_file),
             "-o", str(out_file),
-            "-json",
+            "-jsonl",
             "-silent",
             "-severity", self.config.severity,
             "-no-color",

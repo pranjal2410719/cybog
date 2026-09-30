@@ -22,6 +22,13 @@ class NucleiToolConfig(ToolConfig):
     templates: str = ""
 
 
+class AuthToolConfig(ToolConfig):
+    credentials: str = ""
+    auth_method: str = "basic"  # basic | digest | bearer | custom
+    auth_url: str = ""
+    extra_args: list[str] = Field(default_factory=list)
+
+
 class ToolsConfig(BaseModel):
     subfinder: ToolConfig = Field(default_factory=lambda: ToolConfig(binary="subfinder"))
     dnsx: ToolConfig = Field(default_factory=lambda: ToolConfig(binary="dnsx"))

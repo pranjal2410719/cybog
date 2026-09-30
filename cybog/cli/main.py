@@ -21,6 +21,7 @@ from rich import box
 
 from cybog.config.loader import load_config
 from cybog.logging_setup import setup_logging, get_logger
+from cybog.models.assessment import Assessment, AssessmentStatus
 
 app = typer.Typer(
     name="cybog",
@@ -99,14 +100,38 @@ def cmd_status(
 ):
     """Show assessment status: targets, jobs by status, stage distribution."""
     from cybog.services.assessment_service import AssessmentService
+    from rich.progress import Progress
     cfg = _load_cfg(config_file)
     svc = AssessmentService(cfg)
+
+    a = Assessment(
+        assessment_id="temp",
+        profile="standard",
+        target_input_file="",
+        scope_file="",
+        status=AssessmentStatus.CREATED,
+    )
     state = svc.load_state(assessment_id)
 
-    a = state.assessment
-    console.print(f"\n[bold]Assessment:[/bold] {a.assessment_id}")
-    console.print(f"Status: [bold]{a.status.value}[/bold]  Profile: {a.profile}")
-    console.print(f"Created: {a.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    with Progress(
+        console=console,
+        transient=True,
+        refresh_per_second=10,
+    ) as progress:
+        task = progress.add_task(
+            "[cyan]Loading assessment state...[/cyan]", total=100
+        )
+        progress.update(task, completed=50)
+        state = svc.load_state(assessment_id)
+        progress.update(task, completed=100)
+
+    console.print(f"\n[bold]Assessment:[/bold] {state.assessment.assessment_id}")
+    console.print(
+        f"Status: [bold]{state.assessment.status.value}[/bold]  Profile: {state.assessment.profile}"
+    )
+    console.print(
+        f"Created: {state.assessment.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    )
 
     # Target summary
     t = Table("Domain", "Status", "Hosts", "Services", "Findings", box=box.SIMPLE)
@@ -179,13 +204,58 @@ def cmd_findings(
 def cmd_report(
     assessment_id: str = typer.Argument(...),
     config_file: str = typer.Option("config.yaml", "--config", "-c"),
+    wait: bool = typer.Option(True, "--wait/--no-wait", help="Wait for running assessment to reach 100% before generating report"),
 ):
     """Generate JSON, JSONL, and HTML reports for an assessment."""
+    import time
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from cybog.services.assessment_service import AssessmentService
     from cybog.reporting import JSONReporter, JSONLReporter, HTMLReporter
+    from cybog.models.assessment import AssessmentStatus
+    from cybog.models.job import JobStatus
+
     cfg = _load_cfg(config_file)
     svc = AssessmentService(cfg)
     state = svc.load_state(assessment_id)
+
+    # If the assessment is still active and user wants to wait
+    if wait and state.assessment.status in (AssessmentStatus.RUNNING, AssessmentStatus.RESUMING, AssessmentStatus.CREATED):
+        console.print(f"\n[bold yellow]Assessment {assessment_id} is currently {state.assessment.status.value}.[/bold yellow]")
+        console.print("[dim]Waiting for all stages to reach 100% completion before generating final reports...[/dim]\n")
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total} jobs)"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[cyan]Processing pipeline...", total=100)
+
+            while True:
+                state = svc.load_state(assessment_id)
+                status = state.assessment.status
+
+                total_jobs = len(state.jobs)
+                finished_jobs = sum(
+                    1 for j in state.jobs.values()
+                    if j.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.SKIPPED, JobStatus.CANCELLED)
+                )
+
+                if total_jobs > 0:
+                    pct = (finished_jobs / total_jobs) * 100
+                    progress.update(task, completed=finished_jobs, total=total_jobs)
+                else:
+                    progress.update(task, completed=0, total=1)
+
+                if status in (AssessmentStatus.COMPLETED, AssessmentStatus.FAILED, AssessmentStatus.CANCELLED):
+                    progress.update(task, completed=total_jobs if total_jobs > 0 else 1, total=total_jobs if total_jobs > 0 else 1)
+                    break
+
+                time.sleep(2)
+
     output_dir = Path(cfg.output.root) / assessment_id / "aggregate"
 
     console.print(f"\n[bold blue]Generating reports...[/bold blue]")

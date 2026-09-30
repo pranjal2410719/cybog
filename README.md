@@ -151,21 +151,21 @@ cybog/
 │   └── wordlists/
 │       └── common.txt        # Baseline discovery wordlist
 ├── cybog/
-│   ├── adapters/             # ToolAdapter ABC & implementations for 7 tools
+│   ├── adapters/             # ToolAdapter ABC & implementations for 8 tools
 │   ├── artifacts/            # ArtifactManager for raw logs and execution metadata
 │   ├── cli/                  # Typer / Rich CLI commands
 │   ├── config/               # Pydantic configuration schemas and loader
 │   ├── findings/             # Thread-safe finding deduplication
 │   ├── ingestion/            # Target manifest loader & parser
 │   ├── models/               # Domain models (Target, Finding, Host, Job, etc.)
-│   ├── queue/                # Bounded asyncio JobQueue
+│   ├── queue/                # Bounded asyncio JobQueue & AnalystTask queue
 │   ├── reporting/            # JSON, JSONL, and HTML report generators
 │   ├── scope/                # ScopeValidator
 │   ├── services/             # AssessmentService application layer
 │   ├── state/                # Persisted AssessmentState with atomic writes
 │   ├── workers/              # Semaphore-bounded WorkerPools
 │   └── workflow/             # Scheduler, nodes, and router
-└── tests/                    # 13 unit tests & output fixtures
+└── tests/                    # 15 unit tests & output fixtures
 ```
 
 ---

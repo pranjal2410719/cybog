@@ -36,7 +36,7 @@ tools:
 
   httpx:
     enabled: true
-    binary: httpx
+    binary: /home/dev/go/bin/httpx
     timeout: 300
     extra_args: []
 
@@ -49,8 +49,8 @@ tools:
   katana:
     enabled: true
     binary: katana
-    timeout: 600
-    extra_args: []
+    timeout: 300
+    extra_args: ["-ct", "60s", "-c", "10", "-d", "2"]
 
   ffuf:
     enabled: true

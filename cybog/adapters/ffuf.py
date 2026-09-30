@@ -63,7 +63,7 @@ class FfufAdapter(ToolAdapter):
             "-of", "json",
             "-ac",           # Auto-calibrate baseline responses
             "-mc", "200,201,204,301,302,307,401,403,405",
-            "-silent",
+            "-s",
         ]
         cmd.extend(self.config.extra_args)
         return cmd

@@ -25,10 +25,11 @@ def test_subfinder_adapter_normalization(tmp_path):
     parsed = adapter.parse_output(dummy_res, tmp_path)
     norm = adapter.normalize_output(parsed, job)
 
-    assert len(norm.hosts) == 3
+    assert len(norm.hosts) == 4
     hostnames = [h.hostname for h in norm.hosts]
     assert "api.example.com" in hostnames
     assert "dev.example.com" in hostnames
+    assert "example.com" in hostnames
 
 def test_dnsx_adapter_normalization(tmp_path):
     adapter = DnsxAdapter(ToolConfig(enabled=True, binary="dnsx"))

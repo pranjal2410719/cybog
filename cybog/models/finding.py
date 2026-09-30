@@ -24,7 +24,8 @@ class Severity(str, Enum):
 
 class ValidationStatus(str, Enum):
     DISCOVERED = "DISCOVERED"
-    UNVALIDATED = "UNVALIDATED"
+    NEEDS_VALIDATION = "NEEDS_VALIDATION"
+    VALIDATING = "VALIDATING"
     VALIDATED = "VALIDATED"
     FALSE_POSITIVE = "FALSE_POSITIVE"
     REPORTABLE = "REPORTABLE"
@@ -39,6 +40,9 @@ class Evidence(BaseModel):
     response: Optional[str] = None
     artifact_path: Optional[str] = None
     collected_at: datetime = Field(default_factory=datetime.utcnow)
+    reproduction: Optional[str] = None
+    analyst_notes: Optional[str] = None
+    validation_result: Optional[str] = None
 
 
 class Finding(BaseModel):
@@ -59,6 +63,7 @@ class Finding(BaseModel):
     first_seen: datetime = Field(default_factory=datetime.utcnow)
     last_seen: datetime = Field(default_factory=datetime.utcnow)
     occurrence_count: int = 1
+    attack_chain: Optional[str] = None  # dedup_key of related finding
 
     @model_validator(mode="after")
     def set_dedup_key(self) -> "Finding":

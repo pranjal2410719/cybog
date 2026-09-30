@@ -65,3 +65,30 @@ class PipelineRouter:
         if not all_urls:
             return False, "No endpoints discovered — skipping vulnerability scan"
         return True, f"{len(all_urls)} URLs to scan"
+
+    @staticmethod
+    def should_run_auth_validation(state: AssessmentState, target_id: str) -> tuple[bool, str]:
+        """Run auth validation if there are findings in NEEDS_VALIDATION state."""
+        findings = state.get_findings_for_target(target_id)
+        needing_auth = [f for f in findings if f.validation_status == ValidationStatus.NEEDS_VALIDATION]
+        if not needing_auth:
+            return False, "No findings needing authentication validation"
+        return True, f"{len(needing_auth)} findings need auth validation"
+
+    @staticmethod
+    def is_finding_validated(state: AssessmentState, target_id: str, finding: object) -> bool:
+        """Check if a finding has been validated."""
+        findings = state.get_findings_for_target(target_id)
+        for f in findings:
+            if f.url == finding.url and f.target_id == target_id:
+                return f.validation_status in (ValidationStatus.VALIDATED, ValidationStatus.REPORTABLE)
+        return False
+
+    @staticmethod
+    def has_unvalidated_findings(state: AssessmentState, target_id: str) -> bool:
+        """Check if there are any unvalidated findings for a target."""
+        findings = state.get_findings_for_target(target_id)
+        return any(
+            f.validation_status in (ValidationStatus.DISCOVERED, ValidationStatus.NEEDS_VALIDATION)
+            for f in findings
+        )

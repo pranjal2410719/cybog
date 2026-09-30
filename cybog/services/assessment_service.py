@@ -16,6 +16,8 @@ from cybog.artifacts.manager import ArtifactManager
 from cybog.config.models import CybogConfig
 from cybog.ingestion.manifest import TargetManifestLoader
 from cybog.models.assessment import Assessment, AssessmentStatus, Authorization, AuthorizationStatus
+from cybog.models.finding import Finding, ValidationStatus
+from cybog.models.finding import Finding, ValidationStatus
 from cybog.models.job import JobStatus
 from cybog.models.target import TargetStatus
 from cybog.scope.validator import ScopeValidator
@@ -213,6 +215,52 @@ class AssessmentService:
             state.save(art_mgr.state_path())
 
         return state
+
+    state.save(art_mgr.state_path())
+
+    # ------------------------------------------------------------------
+    # Finding lifecycle
+    # ------------------------------------------------------------------
+    def request_validation(self, assessment_id: str, finding_dedup_key: str) -> bool:
+        """Transition a finding from NEEDS_VALIDATION to VALIDATING.
+        
+        Args:
+            assessment_id: The assessment containing the finding
+            finding_dedup_key: The finding's dedup key (SHA256 hash)
+        """
+        state = self.load_state(assessment_id)
+        if finding_dedup_key in state.findings:
+            finding = state.findings[finding_dedup_key]
+            if finding.validation_status == ValidationStatus.NEEDS_VALIDATION:
+                finding.validation_status = ValidationStatus.VALIDATING
+                finding.last_seen = datetime.utcnow()
+                state.update_finding(finding)  # type: ignore[attr-defined]
+                return True
+        return False
+
+    def confirm_finding(self, assessment_id: str, finding_dedup_key: str) -> bool:
+        """Transition a finding from VALIDATING to CONFIRMED/REPORTABLE."""
+        state = self.load_state(assessment_id)
+        if finding_dedup_key in state.findings:
+            finding = state.findings[finding_dedup_key]
+            if finding.validation_status == ValidationStatus.VALIDATING:
+                finding.validation_status = ValidationStatus.REPORTABLE
+                finding.last_seen = datetime.utcnow()
+                state.update_finding(finding)  # type: ignore[attr-defined]
+                return True
+        return False
+
+    def reject_finding(self, assessment_id: str, finding_dedup_key: str) -> bool:
+        """Transition a finding from VALIDATING to FALSE_POSITIVE."""
+        state = self.load_state(assessment_id)
+        if finding_dedup_key in state.findings:
+            finding = state.findings[finding_dedup_key]
+            if finding.validation_status == ValidationStatus.VALIDATING:
+                finding.validation_status = ValidationStatus.FALSE_POSITIVE
+                finding.last_seen = datetime.utcnow()
+                state.update_finding(finding)  # type: ignore[attr-defined]
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Helpers

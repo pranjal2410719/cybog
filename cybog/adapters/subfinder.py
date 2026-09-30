@@ -93,5 +93,18 @@ class SubfinderAdapter(ToolAdapter):
                         sources=["subfinder"],
                     )
                 )
-        out.raw_count = len(parsed)
+
+        # Always ensure the target domain itself is included as a host
+        target_host = job.target_domain.strip().lower()
+        if target_host and target_host not in seen:
+            seen.add(target_host)
+            out.hosts.append(
+                Host(
+                    hostname=target_host,
+                    target_id=job.target_id,
+                    sources=["target_manifest"],
+                )
+            )
+
+        out.raw_count = len(out.hosts)
         return out
