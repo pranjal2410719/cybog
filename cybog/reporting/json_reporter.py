@@ -33,6 +33,8 @@ class JSONReporter:
                 "targets_by_status": self._count_by(state.targets.values(), "status"),
                 "total_findings": len(state.findings),
                 "findings_by_severity": state.finding_counts_by_severity(),
+                "findings_by_validation_status": state.validation_counts(),
+                "pending_validation": state.pending_validation_count(),
                 "jobs_by_status": state.job_counts_by_status(),
                 "total_hosts": sum(len(v) for v in state.hosts.values()),
                 "total_services": sum(len(v) for v in state.services.values()),

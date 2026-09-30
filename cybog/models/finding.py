@@ -31,6 +31,36 @@ class ValidationStatus(str, Enum):
     REPORTABLE = "REPORTABLE"
 
 
+# The single authority for valid finding lifecycle transitions.
+# Anything not listed here is rejected by Finding.transition_to().
+ALLOWED_TRANSITIONS: dict[ValidationStatus, frozenset[ValidationStatus]] = {
+    ValidationStatus.DISCOVERED: frozenset({ValidationStatus.NEEDS_VALIDATION}),
+    ValidationStatus.NEEDS_VALIDATION: frozenset({ValidationStatus.VALIDATING}),
+    ValidationStatus.VALIDATING: frozenset({
+        ValidationStatus.VALIDATED,
+        ValidationStatus.FALSE_POSITIVE,
+        # A validation attempt that cannot reach a verdict (no applicable
+        # validator, or the tool failed) returns to the pending state rather
+        # than guessing an outcome.
+        ValidationStatus.NEEDS_VALIDATION,
+    }),
+    ValidationStatus.VALIDATED: frozenset({ValidationStatus.REPORTABLE}),
+    ValidationStatus.FALSE_POSITIVE: frozenset(),
+    ValidationStatus.REPORTABLE: frozenset(),
+}
+
+# Statuses a finding can no longer move out of.
+TERMINAL_VALIDATION_STATUSES = frozenset({
+    ValidationStatus.VALIDATED,
+    ValidationStatus.FALSE_POSITIVE,
+    ValidationStatus.REPORTABLE,
+})
+
+
+class InvalidTransitionError(ValueError):
+    """Raised when a lifecycle transition is not permitted."""
+
+
 class Evidence(BaseModel):
     evidence_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     finding_id: str
@@ -74,3 +104,43 @@ class Finding(BaseModel):
             )
             self.dedup_key = hashlib.sha256(key_parts.encode()).hexdigest()[:32]
         return self
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+    def transition_to(self, new_status: ValidationStatus) -> "Finding":
+        """
+        Move this finding to new_status, enforcing the lifecycle.
+
+        The full lifecycle is:
+            DISCOVERED -> NEEDS_VALIDATION -> VALIDATING -> VALIDATED
+                                                       -> FALSE_POSITIVE
+            VALIDATED  -> REPORTABLE
+
+        Anything not in ALLOWED_TRANSITIONS raises InvalidTransitionError.
+        This is the only supported way to change validation_status; assigning
+        the attribute directly bypasses enforcement.
+        """
+        if new_status is self.validation_status:
+            return self
+        allowed = ALLOWED_TRANSITIONS.get(self.validation_status, frozenset())
+        if new_status not in allowed:
+            raise InvalidTransitionError(
+                f"Invalid transition {self.validation_status.value} -> "
+                f"{new_status.value} for finding {self.finding_id} "
+                f"(allowed: {sorted(s.value for s in allowed) or 'none'})"
+            )
+        self.validation_status = new_status
+        return self
+
+    def is_terminal(self) -> bool:
+        """True if this finding has reached a final validation state."""
+        return self.validation_status in TERMINAL_VALIDATION_STATUSES
+
+    def is_pending_validation(self) -> bool:
+        """True if this finding still requires validation work."""
+        return self.validation_status in (
+            ValidationStatus.DISCOVERED,
+            ValidationStatus.NEEDS_VALIDATION,
+            ValidationStatus.VALIDATING,
+        )

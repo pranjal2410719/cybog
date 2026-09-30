@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from cybog.models.execution import ToolResult
-from cybog.models.finding import Finding
+from cybog.models.finding import Evidence, Finding
 from cybog.models.job import StageJob
 from cybog.models.target import Host, IP, Port, Service, URL, Endpoint
 
@@ -49,6 +49,25 @@ class HealthCheckResult:
 class ValidationResult:
     valid: bool
     reason: str
+
+
+@dataclass
+class ValidationOutcome:
+    """
+    Result of validating an EXISTING finding, as opposed to NormalizedOutput
+    which produces new entities.
+
+    applicable:   whether this adapter can meaningfully judge the finding.
+    validated:    True/False when the adapter reached a verdict.
+                  None when it could not determine one — the caller must then
+                  keep the finding pending rather than guess.
+    evidence:     evidence to attach to the finding, or None if none was produced.
+    """
+
+    applicable: bool
+    reason: str
+    validated: Optional[bool] = None
+    evidence: Optional["Evidence"] = None
 
 
 class ToolAdapterError(Exception):
@@ -177,6 +196,23 @@ class ToolAdapter(ABC):
     def collect_artifacts(self, stage_dir: Path, job: StageJob) -> list[str]:
         """Return list of artifact paths (relative strings) created by this stage."""
         return [str(p) for p in stage_dir.iterdir() if p.is_file()]
+
+    def secrets(self) -> list[str]:
+        """
+        Return literal secret values this adapter may place on a command line.
+
+        Used to redact commands before they are logged or persisted. Adapters
+        that carry credentials (e.g. auth) override this. Adapters that embed no
+        secrets return nothing.
+        """
+        return []
+
+    def redact(self, text: str) -> str:
+        """Replace any known secret literal in text with a redaction marker."""
+        for secret in self.secrets():
+            if secret:
+                text = text.replace(secret, "<redacted>")
+        return text
 
     # ------------------------------------------------------------------
     # Shared helpers

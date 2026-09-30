@@ -20,6 +20,9 @@ class AssessmentStatus(str, Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
     RESUMING = "RESUMING"
+    # Pipeline finished but findings still require human validation. This is
+    # deliberately not COMPLETED: the assessment has unresolved findings.
+    AWAITING_VALIDATION = "AWAITING_VALIDATION"
 
 
 class AuthorizationStatus(str, Enum):

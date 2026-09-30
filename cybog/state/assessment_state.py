@@ -16,11 +16,12 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from cybog.models.assessment import Assessment, AssessmentStatus
+from cybog.models.assessment import Assessment
 from cybog.models.target import Target, Host, IP, Port, Service, URL, Endpoint
 from cybog.models.finding import Finding
 from cybog.models.job import StageJob, JobStatus
 from cybog.models.artifact import Artifact
+from cybog.queue.analyst_queue import AnalystTask
 
 
 class AssessmentState(BaseModel):
@@ -40,6 +41,9 @@ class AssessmentState(BaseModel):
 
     # ── Findings ───────────────────────────────────────────────────────
     findings: dict[str, Finding] = Field(default_factory=dict)  # dedup_key -> Finding
+
+    # ── Validation work (human-assisted plane) ─────────────────────────
+    analyst_tasks: dict[str, AnalystTask] = Field(default_factory=dict)  # task_id -> AnalystTask
 
     # ── Execution / job tracking ───────────────────────────────────────
     jobs: dict[str, StageJob] = Field(default_factory=dict)  # job_id -> StageJob
@@ -131,6 +135,59 @@ class AssessmentState(BaseModel):
 
     def get_findings_for_target(self, target_id: str) -> list[Finding]:
         return [f for f in self.findings.values() if f.target_id == target_id]
+
+    def update_finding(self, finding: Finding) -> None:
+        """Persist a mutated finding back into state (keyed by dedup_key)."""
+        finding.last_seen = datetime.utcnow()
+        self.findings[finding.dedup_key] = finding
+
+    def get_finding_by_id(self, finding_id: str) -> Optional[Finding]:
+        for f in self.findings.values():
+            if f.finding_id == finding_id:
+                return f
+        return None
+
+    # ------------------------------------------------------------------
+    # Analyst task helpers
+    # ------------------------------------------------------------------
+    def add_analyst_task(self, task: AnalystTask) -> bool:
+        """
+        Record an analyst task. Returns True if newly created, False if a task
+        for the same finding already exists (dedup on finding_id).
+        """
+        existing = self.get_task_for_finding(task.finding_id)
+        if existing is not None:
+            return False
+        self.analyst_tasks[task.task_id] = task
+        return True
+
+    def get_task_for_finding(self, finding_id: str) -> Optional[AnalystTask]:
+        for t in self.analyst_tasks.values():
+            if t.finding_id == finding_id:
+                return t
+        return None
+
+    def get_tasks_for_target(self, target_id: str) -> list[AnalystTask]:
+        return [t for t in self.analyst_tasks.values() if t.target_id == target_id]
+
+    def get_open_analyst_tasks(self) -> list[AnalystTask]:
+        """Tasks that still require action (not yet resolved by automation or a human)."""
+        return [t for t in self.analyst_tasks.values() if not t.is_terminal()]
+
+    def validation_counts(self) -> dict[str, int]:
+        """Count findings by validation_status."""
+        counts: dict[str, int] = {}
+        for f in self.findings.values():
+            key = f.validation_status.value
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def has_pending_validation(self) -> bool:
+        """True if any finding still awaits validation."""
+        return any(f.is_pending_validation() for f in self.findings.values())
+
+    def pending_validation_count(self) -> int:
+        return sum(1 for f in self.findings.values() if f.is_pending_validation())
 
     # ------------------------------------------------------------------
     # Job helpers

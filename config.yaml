@@ -66,6 +66,17 @@ tools:
     severity: low,medium,high,critical
     extra_args: []
 
+  # Authenticated validation of findings that sit on a live service.
+  # Disabled and credential-free by default. Supply the secret via the
+  # environment so it is never committed:
+  #   export CYBOG_AUTH_CREDENTIALS='user:password'
+  auth:
+    enabled: false
+    binary: httpx
+    timeout: 300
+    auth_method: basic
+    extra_args: []
+
 execution:
   continue_on_error: true
   retry_failed: 2

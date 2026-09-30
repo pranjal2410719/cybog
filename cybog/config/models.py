@@ -2,8 +2,8 @@
 cybog/config/models.py — Pydantic models for config.yaml.
 """
 from __future__ import annotations
-from typing import Optional
-from pydantic import BaseModel, Field
+import os
+from pydantic import BaseModel, Field, model_validator
 
 
 class ToolConfig(BaseModel):
@@ -28,6 +28,24 @@ class AuthToolConfig(ToolConfig):
     auth_url: str = ""
     extra_args: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _load_credentials_from_env(self) -> "AuthToolConfig":
+        """
+        Credentials default to empty and are read from CYBOG_AUTH_CREDENTIALS.
+
+        This keeps secrets out of config.yaml and out of version control. When
+        unset the field stays empty, which makes auth validation report itself
+        as not-applicable rather than failing an unrelated scan.
+        """
+        if not self.credentials:
+            env_value = os.environ.get("CYBOG_AUTH_CREDENTIALS", "")
+            if env_value:
+                object.__setattr__(self, "credentials", env_value)
+        return self
+
+    def is_configured(self) -> bool:
+        return bool(self.credentials)
+
 
 class ToolsConfig(BaseModel):
     subfinder: ToolConfig = Field(default_factory=lambda: ToolConfig(binary="subfinder"))
@@ -37,6 +55,9 @@ class ToolsConfig(BaseModel):
     katana: ToolConfig = Field(default_factory=lambda: ToolConfig(binary="katana", timeout=600))
     ffuf: FfufToolConfig = Field(default_factory=lambda: FfufToolConfig(binary="ffuf", timeout=600))
     nuclei: NucleiToolConfig = Field(default_factory=lambda: NucleiToolConfig(binary="nuclei", timeout=900))
+    auth: AuthToolConfig = Field(
+        default_factory=lambda: AuthToolConfig(binary="httpx", enabled=False)
+    )
 
 
 class WorkersConfig(BaseModel):

@@ -312,6 +312,84 @@ To add a new tool to Cybog:
 
 ---
 
+## 8a. The Validation Plane
+
+Findings produced by scanners are **candidates**, not conclusions. The runtime
+enforces one lifecycle, defined by `ALLOWED_TRANSITIONS` in
+`cybog/models/finding.py`:
+
+```
+DISCOVERED -> NEEDS_VALIDATION -> VALIDATING -> VALIDATED -> REPORTABLE
+                                       |
+                                       +-------> FALSE_POSITIVE
+```
+
+`VALIDATING -> NEEDS_VALIDATION` is also legal: it is how a validation attempt
+that cannot reach a verdict returns the finding to the pending state.
+
+**Never assign `finding.validation_status` directly.** Use
+`finding.transition_to(status)`, which raises `InvalidTransitionError` on an
+invalid jump (e.g. `DISCOVERED -> VALIDATED`).
+
+### How a finding is resolved
+
+| Situation | Outcome |
+|---|---|
+| A validator applies and returns a verdict | `VALIDATED` or `FALSE_POSITIVE`; evidence is attached |
+| No validator applies | Stays `NEEDS_VALIDATION`; task parked as `AWAITING_ANALYST` |
+| The validator runs but cannot conclude | Returns to `NEEDS_VALIDATION` |
+
+There is no fallback heuristic. A finding is never auto-resolved without a
+validator that actually judged it.
+
+### Adding a validator
+
+Implement `validate_finding(finding, live_urls, stage_dir) -> ValidationOutcome`
+(see `AuthAdapter`). It must:
+- Return `validated=None` when it cannot reach a verdict — do not guess.
+- Never create a new `Finding`; update the one you are given.
+- Never place credentials in the returned evidence.
+
+Selection happens in `JobScheduler._validate_finding`, which decides whether a
+validator applies before invoking it.
+
+### Completing an assessment
+
+An assessment reaches `COMPLETED` only when **no finding is pending
+validation**. Otherwise it ends in `AWAITING_VALIDATION` — reporting
+`COMPLETED` with unresolved findings would misclassify them. Targets follow the
+same rule via `JobScheduler._target_is_complete()`.
+
+Analyst decisions are made from the CLI:
+```bash
+cybog pending <assessment_id>          # list findings awaiting a decision
+cybog confirm <assessment_id> <key>    # -> REPORTABLE
+cybog reject  <assessment_id> <key>    # -> FALSE_POSITIVE
+```
+
+### Analyst tasks
+
+Tasks are persisted in `AssessmentState.analyst_tasks`; the
+`BoundedAnalystQueue` is only an in-memory transport. On restart the queue is
+rebuilt from state, so a resume never re-runs completed validation or creates a
+duplicate task. Each task carries `assessment_id` and `target_id`, which the
+worker verifies before touching the referenced finding.
+
+### Authentication configuration
+
+Auth validation is disabled and credential-free by default. Credentials are read
+from the environment so they are never committed:
+
+```bash
+export CYBOG_AUTH_CREDENTIALS='user:password'
+```
+
+The adapter is selected only when auth is enabled, configured, and the finding
+sits on a confirmed live httpx service. Credentials are redacted from
+`job.command` before logging and persistence, and never appear in evidence.
+
+---
+
 ## 9. Troubleshooting & Healthchecks
 
 ### Verifying Tool Availability

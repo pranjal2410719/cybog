@@ -8,6 +8,7 @@ No routing logic inside tool adapters.
 from __future__ import annotations
 
 from cybog.models.job import JobStatus
+from cybog.models.finding import ValidationStatus
 from cybog.state.assessment_state import AssessmentState
 
 

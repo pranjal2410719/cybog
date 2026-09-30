@@ -73,7 +73,9 @@ async def run_stage_node(
 
     # --- Build command ---
     command = adapter.build_command(job, stage_dir, context)
-    job.command = " ".join(command)
+    # Redact secrets before the command is logged or persisted: job.command is
+    # written into execution.json and echoed to logs.
+    job.command = adapter.redact(" ".join(command))
     log.info(f"Executing: {job.command[:200]}")
 
     # --- Execute ---

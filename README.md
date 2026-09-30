@@ -3,7 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Architecture: Persistent Scheduler](https://img.shields.io/badge/engine-asyncio%20workflow-orange.svg)](#architecture)
-[![Testing: Pytest](https://img.shields.io/badge/tests-13%20passed-brightgreen.svg)](#testing)
+[![Testing: Pytest](https://img.shields.io/badge/tests-42%20passed-brightgreen.svg)](#testing)
 
 **Cybog** is an authorized-use-only, deterministic security assessment workflow engine designed for high-throughput single-node and VPS operations.
 
@@ -58,7 +58,40 @@ Instead of running slow, serialized batch shell scripts (`Target 1 -> all tools 
                 nuclei    (Vulnerability scanning)
                    │
                    ▼
-   REPORTS (JSON / JSONL / Self-Contained HTML)
+       FINDING (DISCOVERED — an unverified candidate)
+                   │
+                   ▼
+       NEEDS_VALIDATION  (enters the human-validation boundary)
+                   │
+                   ▼
+       AnalystTask ──► BoundedAnalystQueue
+                   │
+                   ▼
+            VALIDATING
+                   │
+        ┌──────────┴───────────┐
+        ▼                      ▼
+  ValidationAdapter       No applicable
+  (AuthAdapter, when     validator →
+        auth applies)    AWAITING_ANALYST
+        │                      │
+        ▼                      ▼
+   Evidence ◄──────────────────┘
+        │
+   ┌────┴─────┐
+   ▼          ▼
+VALIDATED  FALSE_POSITIVE
+   │
+   ▼
+REPORTABLE
+        │
+        ▼
+ REPORTS (JSON / JSONL / Self-Contained HTML)
+        │
+        ▼
+ ASSESSMENT COMPLETE
+ *(only when no finding is still pending validation; otherwise
+   the assessment ends in AWAITING_VALIDATION)*
 ```
 
 ---
@@ -123,6 +156,29 @@ Reports are written to `./reports/<assessment_id>/aggregate/`:
 ```bash
 python3 -m cybog.cli.main resume <assessment_id>
 ```
+
+### 7. Human Validation Boundary
+Findings that cannot be resolved automatically are parked for analyst review.
+```bash
+# List findings awaiting a decision
+python3 -m cybog.cli.main pending <assessment_id>
+
+# Confirm a finding (VALIDATED → REPORTABLE)
+python3 -m cybog.cli.main confirm <assessment_id> <dedup_key> --notes "verified manually"
+
+# Reject a finding (→ FALSE_POSITIVE)
+python3 -m cybog.cli.main reject <assessment_id> <dedup_key> --notes "not exploitable"
+```
+
+An assessment reaches `COMPLETED` only when every finding has reached a terminal
+validation state. Otherwise it ends in `AWAITING_VALIDATION`.
+
+To enable automatic authentication-based validation, set the credential via the
+environment (never commit it):
+```bash
+export CYBOG_AUTH_CREDENTIALS='user:password'
+```
+Auth validation runs only for findings on confirmed live httpx services.
 
 ---
 

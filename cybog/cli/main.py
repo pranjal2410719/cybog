@@ -309,6 +309,76 @@ def cmd_cancel(
 
 
 # ─────────────────────────────────────────────
+# cybog validate — human-assisted validation boundary
+# ─────────────────────────────────────────────
+@app.command("pending")
+def cmd_pending(
+    assessment_id: str = typer.Argument(...),
+    config_file: str = typer.Option("config.yaml", "--config", "-c"),
+):
+    """List findings still awaiting a validation decision."""
+    from cybog.services.assessment_service import AssessmentService
+    cfg = _load_cfg(config_file)
+    svc = AssessmentService(cfg)
+    pending = svc.pending_validation(assessment_id)
+    if not pending:
+        console.print("[green]No findings awaiting validation.[/green]")
+        return
+    console.print(
+        f"[yellow]{len(pending)} finding(s) awaiting validation:[/yellow]"
+    )
+    for p in pending:
+        console.print(
+            f"  {p['dedup_key'][:12]}  {p['severity']:<8} "
+            f"{p['validation_status']:<18} {p['title']}"
+        )
+        if p["url"]:
+            console.print(f"      [dim]{p['url']}[/dim]")
+
+
+@app.command("confirm")
+def cmd_confirm(
+    assessment_id: str = typer.Argument(...),
+    dedup_key: str = typer.Argument(...),
+    notes: str = typer.Option("", "--notes", "-n"),
+    config_file: str = typer.Option("config.yaml", "--config", "-c"),
+):
+    """Confirm a finding: VALIDATED -> REPORTABLE."""
+    from cybog.services.assessment_service import AssessmentService
+    cfg = _load_cfg(config_file)
+    svc = AssessmentService(cfg)
+    if svc.confirm_finding(assessment_id, dedup_key, analyst_notes=notes or None):
+        console.print(f"[green]Confirmed {dedup_key[:12]}[/green]")
+    else:
+        console.print(
+            f"[red]Could not confirm {dedup_key[:12]}: "
+            f"unknown finding or invalid transition[/red]"
+        )
+        raise typer.Exit(code=1)
+
+
+@app.command("reject")
+def cmd_reject(
+    assessment_id: str = typer.Argument(...),
+    dedup_key: str = typer.Argument(...),
+    notes: str = typer.Option("", "--notes", "-n"),
+    config_file: str = typer.Option("config.yaml", "--config", "-c"),
+):
+    """Reject a finding: VALIDATING -> FALSE_POSITIVE."""
+    from cybog.services.assessment_service import AssessmentService
+    cfg = _load_cfg(config_file)
+    svc = AssessmentService(cfg)
+    if svc.reject_finding(assessment_id, dedup_key, analyst_notes=notes or None):
+        console.print(f"[yellow]Rejected {dedup_key[:12]} as false positive[/yellow]")
+    else:
+        console.print(
+            f"[red]Could not reject {dedup_key[:12]}: "
+            f"unknown finding or invalid transition[/red]"
+        )
+        raise typer.Exit(code=1)
+
+
+# ─────────────────────────────────────────────
 # cybog tools / healthcheck
 # ─────────────────────────────────────────────
 @app.command("tools")

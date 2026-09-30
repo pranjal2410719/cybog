@@ -16,10 +16,10 @@ from cybog.artifacts.manager import ArtifactManager
 from cybog.config.models import CybogConfig
 from cybog.ingestion.manifest import TargetManifestLoader
 from cybog.models.assessment import Assessment, AssessmentStatus, Authorization, AuthorizationStatus
-from cybog.models.finding import Finding, ValidationStatus
-from cybog.models.finding import Finding, ValidationStatus
+from cybog.models.finding import Evidence, InvalidTransitionError, ValidationStatus
 from cybog.models.job import JobStatus
 from cybog.models.target import TargetStatus
+from cybog.queue.analyst_queue import AnalystTaskStatus
 from cybog.scope.validator import ScopeValidator
 from cybog.state.assessment_state import AssessmentState
 from cybog.workflow.scheduler import JobScheduler
@@ -159,7 +159,7 @@ class AssessmentService:
         scheduler = JobScheduler(self.config, state, art_mgr)
         try:
             await scheduler.run(targets)
-            state.assessment.status = AssessmentStatus.COMPLETED
+            state.assessment.status = self._terminal_status(state)
         except Exception as exc:
             self._log.error(f"Pipeline error: {exc}", assessment_id=assessment_id)
             state.assessment.status = AssessmentStatus.FAILED
@@ -170,6 +170,20 @@ class AssessmentService:
             state.save(art_mgr.state_path())
 
         return state
+
+    def _terminal_status(self, state: AssessmentState) -> AssessmentStatus:
+        """
+        An assessment is only COMPLETED when every finding reached a terminal
+        validation state. Otherwise it is AWAITING_VALIDATION — reporting
+        COMPLETED with unresolved findings would misclassify them.
+        """
+        if state.has_pending_validation():
+            pending = state.pending_validation_count()
+            self._log.info(
+                f"Pipeline finished with {pending} finding(s) awaiting validation"
+            )
+            return AssessmentStatus.AWAITING_VALIDATION
+        return AssessmentStatus.COMPLETED
 
     # ------------------------------------------------------------------
     # resume
@@ -205,7 +219,7 @@ class AssessmentService:
         scheduler = JobScheduler(self.config, state, art_mgr)
         try:
             await scheduler.run(targets)
-            state.assessment.status = AssessmentStatus.COMPLETED
+            state.assessment.status = self._terminal_status(state)
         except Exception as exc:
             state.assessment.status = AssessmentStatus.FAILED
             state.assessment.error = str(exc)
@@ -216,51 +230,157 @@ class AssessmentService:
 
         return state
 
-    state.save(art_mgr.state_path())
-
     # ------------------------------------------------------------------
     # Finding lifecycle
+    #
+    # These are the human/analyst entry points into the boundary. They go
+    # through Finding.transition_to(), so an invalid transition is rejected
+    # rather than silently applied. confirm/reject also settle the finding's
+    # analyst task so the assessment can reach a terminal state.
     # ------------------------------------------------------------------
     def request_validation(self, assessment_id: str, finding_dedup_key: str) -> bool:
-        """Transition a finding from NEEDS_VALIDATION to VALIDATING.
-        
-        Args:
-            assessment_id: The assessment containing the finding
-            finding_dedup_key: The finding's dedup key (SHA256 hash)
+        """Analyst picks up a finding: NEEDS_VALIDATION -> VALIDATING.
+
+        Returns False if the finding is absent or not in a state that permits
+        the transition.
         """
         state = self.load_state(assessment_id)
-        if finding_dedup_key in state.findings:
-            finding = state.findings[finding_dedup_key]
+        finding = state.findings.get(finding_dedup_key)
+        if finding is None:
+            return False
+        try:
+            finding.transition_to(ValidationStatus.VALIDATING)
+        except InvalidTransitionError:
+            return False
+        state.update_finding(finding)
+        task = state.get_task_for_finding(finding.finding_id)
+        if task is not None and not task.is_terminal():
+            task.status = AnalystTaskStatus.VALIDATING
+        self._save(state)
+        return True
+
+    def confirm_finding(
+        self,
+        assessment_id: str,
+        finding_dedup_key: str,
+        analyst_notes: Optional[str] = None,
+    ) -> bool:
+        """Analyst confirms a finding: VALIDATING -> VALIDATED -> REPORTABLE.
+
+        Returns False if the finding is absent or the transition is not
+        permitted from its current state.
+        """
+        state = self.load_state(assessment_id)
+        finding = state.findings.get(finding_dedup_key)
+        if finding is None:
+            return False
+        try:
             if finding.validation_status == ValidationStatus.NEEDS_VALIDATION:
-                finding.validation_status = ValidationStatus.VALIDATING
-                finding.last_seen = datetime.utcnow()
-                state.update_finding(finding)  # type: ignore[attr-defined]
-                return True
-        return False
+                # Allow confirming straight from the pending state: the analyst
+                # has reviewed it, so the VALIDATING hop is bookkeeping only.
+                finding.transition_to(ValidationStatus.VALIDATING)
+            finding.transition_to(ValidationStatus.VALIDATED)
+            finding.transition_to(ValidationStatus.REPORTABLE)
+        except InvalidTransitionError:
+            return False
 
-    def confirm_finding(self, assessment_id: str, finding_dedup_key: str) -> bool:
-        """Transition a finding from VALIDATING to CONFIRMED/REPORTABLE."""
-        state = self.load_state(assessment_id)
-        if finding_dedup_key in state.findings:
-            finding = state.findings[finding_dedup_key]
-            if finding.validation_status == ValidationStatus.VALIDATING:
-                finding.validation_status = ValidationStatus.REPORTABLE
-                finding.last_seen = datetime.utcnow()
-                state.update_finding(finding)  # type: ignore[attr-defined]
-                return True
-        return False
+        if analyst_notes:
+            evidence = Evidence(
+                finding_id=finding.finding_id,
+                tool="analyst",
+                raw_output=analyst_notes,
+                analyst_notes=analyst_notes,
+                validation_result="Confirmed by analyst",
+            )
+            finding.evidence.append(evidence)
 
-    def reject_finding(self, assessment_id: str, finding_dedup_key: str) -> bool:
-        """Transition a finding from VALIDATING to FALSE_POSITIVE."""
+        state.update_finding(finding)
+        self._settle_task(state, finding.finding_id, "Confirmed by analyst")
+        self._save(state)
+        self._refresh_assessment_status(state)
+        return True
+
+    def reject_finding(
+        self,
+        assessment_id: str,
+        finding_dedup_key: str,
+        analyst_notes: Optional[str] = None,
+    ) -> bool:
+        """Analyst rejects a finding: VALIDATING -> FALSE_POSITIVE."""
         state = self.load_state(assessment_id)
-        if finding_dedup_key in state.findings:
-            finding = state.findings[finding_dedup_key]
-            if finding.validation_status == ValidationStatus.VALIDATING:
-                finding.validation_status = ValidationStatus.FALSE_POSITIVE
-                finding.last_seen = datetime.utcnow()
-                state.update_finding(finding)  # type: ignore[attr-defined]
-                return True
-        return False
+        finding = state.findings.get(finding_dedup_key)
+        if finding is None:
+            return False
+        try:
+            if finding.validation_status == ValidationStatus.NEEDS_VALIDATION:
+                finding.transition_to(ValidationStatus.VALIDATING)
+            finding.transition_to(ValidationStatus.FALSE_POSITIVE)
+        except InvalidTransitionError:
+            return False
+
+        if analyst_notes:
+            evidence = Evidence(
+                finding_id=finding.finding_id,
+                tool="analyst",
+                raw_output=analyst_notes,
+                analyst_notes=analyst_notes,
+                validation_result="Rejected by analyst",
+            )
+            finding.evidence.append(evidence)
+
+        state.update_finding(finding)
+        self._settle_task(state, finding.finding_id, "Rejected by analyst")
+        self._save(state)
+        self._refresh_assessment_status(state)
+        return True
+
+    def pending_validation(self, assessment_id: str) -> list[dict]:
+        """List findings still awaiting a human validation decision."""
+        state = self.load_state(assessment_id)
+        return [
+            {
+                "dedup_key": f.dedup_key,
+                "finding_id": f.finding_id,
+                "title": f.title,
+                "severity": f.severity.value,
+                "url": f.url,
+                "target_id": f.target_id,
+                "validation_status": f.validation_status.value,
+            }
+            for f in state.findings.values()
+            if f.is_pending_validation()
+        ]
+
+    def _settle_task(
+        self, state: AssessmentState, finding_id: str, result: str
+    ) -> None:
+        """
+        Mark a finding's analyst task resolved by a human decision.
+
+        AWAITING_ANALYST is terminal for the validation worker (it will not
+        touch the task again) but is not a final outcome, so an analyst
+        decision moves it to COMPLETED.
+        """
+        task = state.get_task_for_finding(finding_id)
+        if task is None:
+            return
+        if task.status == AnalystTaskStatus.COMPLETED:
+            return
+        task.status = AnalystTaskStatus.COMPLETED
+        task.result = result
+        task.completed_at = datetime.now(timezone.utc)
+
+    def _refresh_assessment_status(self, state: AssessmentState) -> None:
+        """Recompute assessment status after an analyst decision."""
+        if state.assessment.status in (
+            AssessmentStatus.AWAITING_VALIDATION,
+            AssessmentStatus.COMPLETED,
+        ):
+            state.assessment.status = self._terminal_status(state)
+        self.save_state(state)
+
+    def _save(self, state: AssessmentState) -> None:
+        self.save_state(state)
 
     # ------------------------------------------------------------------
     # Helpers
