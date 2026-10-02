@@ -1,0 +1,90 @@
+pipeline:
+  profile: standard
+
+targets:
+  input: ./targets.txt
+  batch_size: 100
+
+authorization:
+  required: true
+  scope_file: ./authorized_scope.txt
+
+workers:
+  subfinder: 4
+  dnsx: 8
+  httpx: 8
+  naabu: 4
+  katana: 4
+  ffuf: 2
+  nuclei: 4
+
+queues:
+  max_size: 100
+
+tools:
+  subfinder:
+    enabled: true
+    binary: subfinder
+    timeout: 300
+    extra_args: []
+
+  dnsx:
+    enabled: true
+    binary: dnsx
+    timeout: 300
+    extra_args: []
+
+  httpx:
+    enabled: true
+    binary: httpx
+    timeout: 300
+    extra_args: []
+
+  naabu:
+    enabled: true
+    binary: naabu
+    timeout: 600
+    extra_args: []
+
+  katana:
+    enabled: true
+    binary: katana
+    timeout: 300
+    extra_args: ["-ct", "60s", "-c", "10", "-d", "2"]
+
+  ffuf:
+    enabled: true
+    binary: ffuf
+    timeout: 600
+    wordlist: ./config/wordlists/common.txt
+    extra_args: []
+
+  nuclei:
+    enabled: true
+    binary: nuclei
+    timeout: 900
+    severity: low,medium,high,critical
+    extra_args: []
+
+  # Authenticated validation of findings that sit on a live service.
+  # Disabled and credential-free by default. Supply the secret via the
+  # environment so it is never committed:
+  #   export CYBOG_AUTH_CREDENTIALS='user:password'
+  auth:
+    enabled: false
+    binary: httpx
+    timeout: 300
+    auth_method: basic
+    extra_args: []
+
+execution:
+  continue_on_error: true
+  retry_failed: 2
+  resume: true
+
+output:
+  root: ./reports
+
+logging:
+  level: INFO
+  format: json

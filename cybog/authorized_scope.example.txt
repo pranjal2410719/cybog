@@ -1,0 +1,9 @@
+# Authorized Scope Manifest — EXAMPLE TEMPLATE
+# Copy to authorized_scope.txt. Scope validation is hard-closed (whitelist only):
+# a target is scanned ONLY if it matches a non-excluded entry here.
+example.com
+*.example.com
+
+# Explicit exclusions (! prefix)
+!internal.example.com
+!staging.example.com

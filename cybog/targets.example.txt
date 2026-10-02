@@ -1,0 +1,4 @@
+# Target Domains Manifest — EXAMPLE TEMPLATE
+# Copy to targets.txt and list ONLY systems you own or have explicit
+# written authorization to assess. Scanning without authorization is illegal.
+example.com
