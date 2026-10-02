@@ -50,8 +50,18 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# Environments
+# Environments — ignore all local env files, keep committed examples
 .env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env.local
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+!**/*.example.txt
+!**/*.example.yaml
+!**/config.example.yaml
 .venv
 env/
 venv/
@@ -59,10 +69,36 @@ ENV/
 env.bak/
 venv.bak/
 
-# Local Cybog assessment runs & reports
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build output
+frontend/dist/
+frontend/dist-ssr/
+frontend/tsconfig.tsbuildinfo
+
+# Local Cybog assessment runs & reports (all locations)
 reports/
+backend/reports/
+cybog/reports/
+temp_uploads/
+exports/
 *.tmp
 state.json
+
+# Local operator inputs — never commit real targets/scope
+# (commit only *.example.txt templates)
+cybog/targets.txt
+cybog/authorized_scope.txt
+cybog/bs.txt
+cybog/test/
+
+# Toolchain scratch
+.kilo/
+.dump/
 
 # IDE & Editor files
 .vscode/
@@ -71,3 +107,4 @@ state.json
 *.swo
 *~
 .DS_Store
+Thumbs.db

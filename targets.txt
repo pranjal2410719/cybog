@@ -1,3 +1,0 @@
-# Target Domains Manifest
-# Dedicated legal test targets
-braynix.in

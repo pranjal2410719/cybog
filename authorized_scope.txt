@@ -1,3 +1,0 @@
-# Authorized Scope Manifest
-*.vulnweb.com
-braynix.in

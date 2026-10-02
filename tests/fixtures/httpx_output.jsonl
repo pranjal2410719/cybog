@@ -1,2 +1,0 @@
-{"url": "https://api.example.com", "status_code": 200, "title": "API Gateway", "tech": ["Nginx", "Node.js"], "host": "api.example.com", "port": "443"}
-{"url": "http://dev.example.com", "status_code": 301, "title": "Redirect", "tech": ["Apache"], "host": "dev.example.com", "port": "80"}
