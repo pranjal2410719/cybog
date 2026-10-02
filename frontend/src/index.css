@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 220 10% 10%;
+  --primary: 160 84% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 10% 90%;
+  --secondary-foreground: 220 10% 20%;
+  --muted: 220 10% 95%;
+  --muted-foreground: 220 10% 40%;
+  --accent: 160 84% 45%;
+  --destructive: 0 84% 60%;
+  --border: 220 10% 90%;
+  --input: 220 10% 90%;
+  --ring: 160 84% 45%;
+}
+
+.dark {
+  --background: 0 0% 10%;
+  --foreground: 0 0% 90%;
+  --primary: 160 84% 50%;
+  --primary-foreground: 0 0% 10%;
+  --secondary: 220 10% 20%;
+  --secondary-foreground: 0 0% 90%;
+  --muted: 220 10% 15%;
+  --muted-foreground: 220 10% 60%;
+  --accent: 160 84% 60%;
+  --destructive: 0 84% 60%;
+  --border: 220 10% 25%;
+  --input: 220 10% 25%;
+  --ring: 160 84% 50%;
+}
+
+html {
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+  border: 0 solid hsl(var(--border));
+}
+
+button {
+  vertical-align: middle;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+input {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 0 0% 10%;
+    --foreground: 0 0% 90%;
+    --primary: 160 84% 50%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 220 10% 20%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 220 10% 15%;
+    --muted-foreground: 220 10% 60%;
+    --accent: 160 84% 60%;
+    --destructive: 0 84% 60%;
+    --border: 220 10% 25%;
+    --input: 220 10% 25%;
+    --ring: 160 84% 50%;
+  }
+}

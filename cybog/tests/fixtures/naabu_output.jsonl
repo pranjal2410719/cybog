@@ -1,0 +1,3 @@
+{"host": "api.example.com", "port": 443, "protocol": "tcp"}
+{"host": "api.example.com", "port": 80, "protocol": "tcp"}
+{"host": "dev.example.com", "port": 80, "protocol": "tcp"}

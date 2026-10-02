@@ -1,0 +1,10 @@
+admin
+login
+api
+v1
+v2
+health
+dashboard
+metrics
+test
+staging
