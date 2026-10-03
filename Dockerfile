@@ -14,6 +14,7 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
     (nuclei -update-templates -silent || true) && \
+    mkdir -p /root/.config/nuclei /root/.cache/nuclei && \
     rm -rf /go/pkg/mod /go/pkg/sumdb /root/.cache/go-build
 
 # ---- Runtime: backend API + cybog engine ----
