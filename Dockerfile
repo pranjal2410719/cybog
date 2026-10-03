@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Builder: compile the 7 security tools ----
-FROM golang:1.23-bookworm AS tools
-
-RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*
+FROM golang:1.26-bookworm AS tools
 
 ENV GOPATH=/go
 ENV PATH="/go/bin:${PATH}"
@@ -15,12 +13,11 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
     go install -v github.com/ffuf/ffuf/v2@latest && \
     go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    nuclei -update-templates -silent || true
+    (nuclei -update-templates -silent || true) && \
+    rm -rf /go/pkg/mod /go/pkg/sumdb /root/.cache/go-build
 
 # ---- Runtime: backend API + cybog engine ----
 FROM python:3.11-slim-bookworm
-
-RUN apt-get update && apt-get install -y --no-install-recommends curl jq ca-certificates git && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -46,6 +43,6 @@ ENV CYBOG_RUNTIME=production \
 WORKDIR /app/backend
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:'+__import__('os').environ.get('PORT','8000')+'/health').status==200 else 1)"
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
