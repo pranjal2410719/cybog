@@ -25,7 +25,7 @@ _DEFAULT_PORTS = "80,443,8080,8443,8000,8888,3000,5000,9090,9443"
 class NaabuAdapter(ToolAdapter):
     def __init__(self, config: ToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {

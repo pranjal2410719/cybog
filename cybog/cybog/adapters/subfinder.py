@@ -22,7 +22,7 @@ _log = get_logger("adapters.subfinder")
 class SubfinderAdapter(ToolAdapter):
     def __init__(self, config: ToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {

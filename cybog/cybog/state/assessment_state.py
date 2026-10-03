@@ -73,11 +73,25 @@ class AssessmentState(BaseModel):
     # Asset helpers
     # ------------------------------------------------------------------
     def add_hosts(self, target_id: str, hosts: list[Host]) -> None:
-        existing = {h.hostname for h in self.hosts.get(target_id, [])}
+        existing = {
+            h.hostname.lower(): h
+            for h in self.hosts.get(target_id, [])
+        }
         for h in hosts:
-            if h.hostname not in existing:
+            key = h.hostname.lower()
+            if key in existing:
+                prev = existing[key]
+                merged_ips = list(dict.fromkeys(
+                    [str(ip) for ip in (prev.ips or [])] + [str(ip) for ip in (h.ips or [])]
+                ))
+                prev.ips = merged_ips
+                merged_sources = list(dict.fromkeys(
+                    (prev.sources or []) + (h.sources or [])
+                ))
+                prev.sources = merged_sources
+            else:
                 self.hosts.setdefault(target_id, []).append(h)
-                existing.add(h.hostname)
+                existing[key] = h
 
     def add_ports(self, target_id: str, ports: list[Port]) -> None:
         existing = {(p.host, p.port) for p in self.ports.get(target_id, [])}

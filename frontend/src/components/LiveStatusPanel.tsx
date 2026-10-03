@@ -307,6 +307,16 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
         <p className="text-[12px] text-graphite mt-1">
           {snapshot.targets_completed}/{snapshot.targets_total} targets completed ·{' '}
           {snapshot.jobs_failed} failed job{snapshot.jobs_failed === 1 ? '' : 's'}
+          {snapshot.partial_failure && (
+            <span style={{ color: '#c0392b' }}>
+              {' '}· partial failure (some targets failed)
+            </span>
+          )}
+          {snapshot.failed_stages && snapshot.failed_stages.length > 0 && (
+            <span style={{ color: '#c0392b' }}>
+              {' '}· failed stages: {snapshot.failed_stages.join(', ')}
+            </span>
+          )}
         </p>
       </div>
 

@@ -62,6 +62,7 @@ export interface ProgressSnapshot {
   targets: LiveTarget[];
   targets_total: number;
   targets_completed: number;
+  targets_failed: number;
   stages: LiveStage[];
   /** Stages with >=1 RUNNING job. There is no single "current stage". */
   running_stages: string[];
@@ -75,6 +76,8 @@ export interface ProgressSnapshot {
   pending_validation_count: number;
   created_at: string;
   updated_at: string;
+  partial_failure: boolean;
+  failed_stages: string[];
 }
 
 export interface LiveTarget {

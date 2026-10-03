@@ -22,6 +22,7 @@ queues:
   max_size: 100
 
 tools:
+  bin_dirs: ["~/go/bin"]
   subfinder:
     enabled: true
     binary: subfinder

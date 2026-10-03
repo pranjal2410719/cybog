@@ -408,15 +408,17 @@ def _run_health_check(config_file: str) -> None:
         FfufAdapter(cfg.tools.ffuf),
         NucleiAdapter(cfg.tools.nuclei),
     ]
-    t = Table("Tool", "Binary", "Available", "Version", "Error", box=box.SIMPLE)
+    t = Table("Tool", "Binary", "Resolved", "Available", "Version", "Error", box=box.SIMPLE)
     all_ok = True
     for adapter in adapters:
         hc = adapter.health_check()
         available = "[green]✔[/green]" if hc.available else "[red]✘[/red]"
         if not hc.available:
             all_ok = False
+        resolved = getattr(adapter.config, "resolve_binary", lambda: adapter.config.binary)()
         t.add_row(
-            hc.tool, hc.binary, available,
+            hc.tool, hc.binary, resolved,
+            available,
             hc.version or "—", hc.error or "—"
         )
     console.print(t)
@@ -424,6 +426,7 @@ def _run_health_check(config_file: str) -> None:
         console.print("\n[bold green]All tools available.[/bold green]\n")
     else:
         console.print("\n[bold red]Some tools are missing. Install them before running.[/bold red]\n")
+        raise typer.Exit(code=1)
 
 
 # ─────────────────────────────────────────────

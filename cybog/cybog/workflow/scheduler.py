@@ -371,6 +371,11 @@ class JobScheduler:
                 if run_ffuf:
                     await self._enqueue(target_id, job.target_domain, "ffuf")
                 if not run_katana and not run_ffuf:
+                    self._skip_downstream(
+                        target_id, job,
+                        ["katana", "ffuf", "nuclei"],
+                        reason=r1,
+                    )
                     self._mark_target_done(target_id)
 
         elif completed_stage in ("katana", "ffuf"):
@@ -413,10 +418,14 @@ class JobScheduler:
     # ------------------------------------------------------------------
     def _build_context(self, target_id: str, stage: str) -> dict:
         """Build the context dict for an adapter based on current state."""
+        subfinder_hosts = [h.hostname for h in self.state.hosts.get(target_id, [])]
+        dnsx_hosts = [
+            h.hostname for h in self.state.hosts.get(target_id, [])
+            if h.ips
+        ]
         return {
-            "subfinder_hosts": [h.hostname for h in self.state.hosts.get(target_id, [])],
-            "dnsx_hosts": [h.hostname for h in self.state.hosts.get(target_id, [])
-                           if h.sources and "dnsx" in h.sources or "subfinder" in h.sources],
+            "subfinder_hosts": subfinder_hosts,
+            "dnsx_hosts": dnsx_hosts,
             "httpx_urls": self.state.get_live_urls_for_target(target_id),
             "all_urls": self.state.get_all_urls_for_target(target_id),
         }
@@ -451,7 +460,7 @@ class JobScheduler:
         job = self.state.get_job_for_stage(target_id, stage)
         return job is not None and job.status == JobStatus.SKIPPED
 
-    def _skip_downstream(self, target_id: str, job: StageJob, stages: list[str]) -> None:
+    def _skip_downstream(self, target_id: str, job: StageJob, stages: list[str], reason: str = "Upstream stage produced 0 results") -> None:
         for s in stages:
             skip_job = StageJob(
                 assessment_id=job.assessment_id,
@@ -459,7 +468,7 @@ class JobScheduler:
                 target_domain=job.target_domain,
                 stage=s,
                 status=JobStatus.SKIPPED,
-                skip_reason="Upstream stage produced 0 results",
+                skip_reason=reason,
             )
             self.state.add_job(skip_job)
 

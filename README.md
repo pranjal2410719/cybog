@@ -486,9 +486,9 @@ Cybog expects. A tool version bump can change that output and break a stage
 silently. The live runs in §10 are encouraging but not a systematic validation
 of every tool and version.
 
-**2. No containerization or CI.** There is no `Dockerfile`, `docker-compose.yml`,
-`Makefile`, or GitHub Actions workflow. Everything is run manually, and
-`setup.sh` assumes a Debian-family host. Tool versions are unpinned.
+**2. No containerization or CI.** There is no `Makefile` or GitHub Actions
+workflow. Everything is run manually via `setup.sh` and `scripts/tunnel-dev.sh`,
+and the setup script assumes a Debian-family host. Tool versions are unpinned.
 
 **3. Authentication is a placeholder.** `get_current_user()` returns
 `"anonymous"`; there is no real auth. Every endpoint is effectively open —
@@ -526,8 +526,10 @@ status, not just the assessment status.
 2. **Real-tool integration validation** — run one authorized target end to end
    with real binaries and confirm each stage parses correctly. This is the
    biggest remaining gap.
-3. **Replace `setup.sh` with a pinned Dockerfile** — fix tool versions and make
-   the environment reproducible.
+3. **Containerization was rejected in favour of `setup.sh`** — the project is
+   VPS-hosted on Azure and `scripts/tunnel-dev.sh` is the single entrypoint.
+   If you want a reproducible build, pin tool versions in `setup.sh` or write
+   a Nix flake; a Dockerfile is not on the roadmap.
 4. **Implement real authentication** — the placeholder should not survive to
    any shared deployment.
 5. **Ship a real wordlist** — the 10-line `config/wordlists/common.txt` makes

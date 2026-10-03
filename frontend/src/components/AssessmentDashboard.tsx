@@ -248,9 +248,13 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
 
       {/* Loading skeleton */}
       {loading && (
-        <div className="space-y-3">
+        <div
+          className="space-y-3"
+          role="status"
+          aria-label="Loading assessments"
+        >
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 rounded-card border border-warm-mist animate-pulse"
+            <div key={i} aria-hidden="true" className="h-24 rounded-card border border-warm-mist animate-pulse"
                  style={{ background: '#fdfbfa' }} />
           ))}
         </div>
@@ -258,7 +262,7 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
 
       {/* Error */}
       {!loading && error && (
-        <div className="rounded-card border border-warm-mist p-4 flex items-center justify-between"
+        <div role="alert" className="rounded-card border border-warm-mist p-4 flex items-center justify-between"
              style={{ background: '#fdf3f3' }}>
           <p className="text-[14px]" style={{ color: '#c0392b' }}>{error}</p>
           <button

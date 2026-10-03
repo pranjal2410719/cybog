@@ -186,6 +186,17 @@ def build_progress_snapshot(
         1 for t in state.targets.values() if t.status == TargetStatus.COMPLETED
     )
 
+    failed_targets = sum(
+        1 for t in state.targets.values() if t.status == TargetStatus.FAILED
+    )
+    failed_stages = sorted(
+        {s for s, jobs in by_stage.items() if any(j.status == JobStatus.FAILED for j in jobs)}
+    )
+    partial_failure = bool(failed_targets) and not all(
+        t.status in (TargetStatus.COMPLETED, TargetStatus.FAILED)
+        for t in state.targets.values()
+    )
+
     return {
         "type": "progress",
         "assessment_id": aid,
@@ -235,6 +246,9 @@ def build_progress_snapshot(
         "created_at": _iso(state.assessment.created_at),
         "updated_at": _iso(getattr(state.assessment, "updated_at", None))
         or _iso(state.last_updated),
+        "targets_failed": failed_targets,
+        "partial_failure": partial_failure,
+        "failed_stages": failed_stages,
     }
 
 

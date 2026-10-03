@@ -35,7 +35,7 @@ _log = get_logger("adapters.auth")
 class AuthAdapter(ToolAdapter):
     def __init__(self, config: AuthToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {

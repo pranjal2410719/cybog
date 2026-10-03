@@ -34,7 +34,7 @@ _SEVERITY_MAP: dict[str, Severity] = {
 class NucleiAdapter(ToolAdapter):
     def __init__(self, config: NucleiToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {

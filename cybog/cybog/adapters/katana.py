@@ -24,7 +24,7 @@ _log = get_logger("adapters.katana")
 class KatanaAdapter(ToolAdapter):
     def __init__(self, config: ToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {
@@ -82,7 +82,8 @@ class KatanaAdapter(ToolAdapter):
             "-silent",
             "-jc",         # JavaScript crawling
             "-kf", "all",  # Known files
-            "-d", "3",     # Depth
+            # Depth is controlled by config.yaml extra_args only (single source
+            # of truth). Adding a second -d here would shadow the user's value.
         ]
         cmd.extend(self.config.extra_args)
         return cmd

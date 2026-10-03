@@ -55,7 +55,12 @@ describe('loading state', () => {
   it('shows a loading indicator before data arrives', () => {
     listAssessments.mockReturnValue(new Promise(() => {}));
     render(<AssessmentDashboard />);
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: /loading assessments/i })
+    ).toBeInTheDocument();
+    // Nothing terminal may render while the request is in flight.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('No assessments yet')).not.toBeInTheDocument();
   });
 });
 
@@ -65,11 +70,13 @@ describe('empty state', () => {
     render(<AssessmentDashboard />);
 
     await waitFor(() => expect(screen.getByText('No assessments yet')).toBeInTheDocument());
+    expect(screen.getByText(/create your first assessment/i)).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /create your first assessment/i })
+      screen.getByRole('button', { name: /^create assessment$/i })
     ).toBeInTheDocument();
     // A successful empty result is not an error.
-    expect(screen.queryByText('Failed to load assessments')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/failed to load assessments/i)).not.toBeInTheDocument();
   });
 });
 
@@ -78,9 +85,8 @@ describe('error state', () => {
     listAssessments.mockRejectedValue(new Error('network down'));
     render(<AssessmentDashboard />);
 
-    await waitFor(() =>
-      expect(screen.getByText('Failed to load assessments')).toBeInTheDocument()
-    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/failed to load assessments/i);
     // The key regression this guards: a failure must NOT masquerade as
     // "nothing here", which would hide an unreachable backend.
     expect(screen.queryByText('No assessments yet')).not.toBeInTheDocument();
@@ -92,8 +98,8 @@ describe('error state', () => {
     listAssessments.mockRejectedValueOnce(new Error('boom'));
     render(<AssessmentDashboard />);
 
-    await waitFor(() =>
-      expect(screen.getByText('Failed to load assessments')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /failed to load assessments/i
     );
     listAssessments.mockResolvedValue([assessment()]);
     await user.click(screen.getByRole('button', { name: /retry/i }));
@@ -118,10 +124,9 @@ describe('rendering real assessments', () => {
     render(<AssessmentDashboard />);
 
     await waitFor(() => expect(screen.getByText('Nightly scan')).toBeInTheDocument());
-    const pending = screen.getByText('Pending Validation:').parentElement;
-    expect(pending?.textContent).toContain('2');
-    const findings = screen.getByText('Findings:').parentElement;
-    expect(findings?.textContent).toContain('3');
+    // "Findings" is the label span; its parent carries the label plus the count.
+    expect(screen.getByText('Findings').parentElement).toHaveTextContent('Findings 3');
+    expect(screen.getByText('2 pending validation')).toBeInTheDocument();
   });
 
   it('navigates in-app when an assessment is selected', async () => {

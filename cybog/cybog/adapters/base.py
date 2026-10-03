@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import time
 from abc import ABC, abstractmethod
@@ -141,11 +142,13 @@ class ToolAdapter(ABC):
         exit_code = -1
 
         try:
+            env = self._exec_env()
             proc = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 stdin=asyncio.subprocess.PIPE if stdin_data else None,
+                env=env,
             )
             stdin_bytes = stdin_data.encode() if stdin_data else None
             try:
@@ -192,6 +195,18 @@ class ToolAdapter(ABC):
             started_at=started_at,
             finished_at=finished_at,
         )
+
+    def _exec_env(self) -> Optional[dict[str, str]]:
+        cfg = getattr(self, "config", None)
+        if cfg is None:
+            return None
+        bin_dirs = getattr(cfg, "bin_dirs", []) or []
+        if not bin_dirs:
+            return None
+        expanded = [str(Path(d).expanduser()) for d in bin_dirs]
+        env = dict(os.environ)
+        env["PATH"] = ":".join(expanded) + ":" + env.get("PATH", "")
+        return env
 
     def collect_artifacts(self, stage_dir: Path, job: StageJob) -> list[str]:
         """Return list of artifact paths (relative strings) created by this stage."""
@@ -266,3 +281,84 @@ class ToolAdapter(ABC):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(lines), encoding="utf-8")
         return path
+
+    @staticmethod
+    def looks_like_compiled_binary(path: str) -> bool:
+        p = Path(path)
+        if not p.is_file():
+            return False
+        try:
+            with open(p, "rb") as fh:
+                header = fh.read(4)
+            if not header:
+                return False
+            if header[:2] == b"#!":
+                return False
+            if header[:4] == b"\x7fELF":
+                return True
+            if header[:2] in (b"MZ", b"ZM"):
+                return True
+            return False
+        except OSError:
+            return False
+
+    def build_commands(
+        self, job: StageJob, stage_dir: Path, context: dict
+    ) -> list[list[str]]:
+        return [self.build_command(job, stage_dir, context)]
+
+    def _check_binary(self, binary: str) -> HealthCheckResult:
+        resolved = binary
+        cfg = getattr(self, "config", None)
+        if cfg is not None:
+            resolved = cfg.resolve_binary()
+
+        if not Path(resolved).is_file() or not os.access(resolved, os.X_OK):
+            return HealthCheckResult(
+                tool=self.metadata().get("name", binary),
+                binary=binary,
+                available=False,
+                error=f"Binary '{binary}' not found (resolved: {resolved}).",
+            )
+
+        if not self.looks_like_compiled_binary(resolved):
+            return HealthCheckResult(
+                tool=self.metadata().get("name", binary),
+                binary=binary,
+                available=False,
+                error=(
+                    f"{binary} resolved to '{resolved}', which is not a "
+                    f"compiled binary (e.g. a Python script) — another "
+                    f"program of the same name is shadowing it in PATH."
+                ),
+            )
+
+        version_args = getattr(getattr(self, "config", None), "version_args", ["--version"]) or ["--version"]
+        version: Optional[str] = None
+        try:
+            import subprocess
+            res = subprocess.run(
+                [resolved] + version_args,
+                capture_output=True, text=True, timeout=10
+            )
+            version_text = (res.stdout or res.stderr or "").strip().splitlines()
+            version = version_text[0][:80] if version_text else "unknown"
+            first = (res.stdout or res.stderr or "").strip().splitlines()[0].lower() if version_text else ""
+            if "usage:" in first or "python" in first or "click" in first:
+                return HealthCheckResult(
+                    tool=self.metadata().get("name", binary),
+                    binary=binary,
+                    available=False,
+                    error=(
+                        f"Version probe for '{binary}' returned a Python/Click "
+                        f"usage string — a script is shadowing the compiled binary."
+                    ),
+                )
+        except Exception:
+            version = "unknown"
+        return HealthCheckResult(
+            tool=self.metadata().get("name", binary),
+            binary=binary,
+            available=True,
+            version=version,
+        )

@@ -93,7 +93,7 @@ async def run_stage_node(
 
     # --- Persist raw output (stdout already written by base.execute) ---
     raw_text = ""
-    for candidate in ("raw.jsonl", "raw.json", "raw.txt"):
+    for candidate in ("raw.jsonl", "raw.json", "raw.txt", "raw.0.json", "raw.1.json", "raw.2.json", "raw.3.json", "raw.4.json", "raw.5.json", "raw.6.json", "raw.7.json", "raw.8.json", "raw.9.json"):
         candidate_path = stage_dir / candidate
         if candidate_path.exists():
             raw_text = candidate_path.read_text(encoding="utf-8")
@@ -117,7 +117,7 @@ async def run_stage_node(
         job.attempt += 1
         job.status = JobStatus.PENDING
         state.update_job(job)
-        # Recursive retry
+        _write_exec_meta(stage_dir, job, tool_result, success=False)
         return await run_stage_node(
             stage, adapter, job, state, artifact_mgr, context, max_retries, log
         )

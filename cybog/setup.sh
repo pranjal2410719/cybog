@@ -44,22 +44,29 @@ check_golang() {
 
 # 2. Configure PATH
 configure_path() {
-    log_info "Configuring PATH for Go & local binaries..."
-    export PATH="$PATH:$BIN_DIR:$LOCAL_BIN"
-    
-    # Persist in user shell rc if not already present
+    log_info "Configuring PATH..."
+    # prepend $BIN_DIR so Go tools win over any identically-named pip console
+    # scripts (e.g. the Python httpx Click script that shadowed ProjectDiscovery's
+    # Go httpx binary). $LOCAL_BIN stays last so pip user scripts never outrank
+    # the compiled Go toolchain.
+    export PATH="$BIN_DIR:$LOCAL_BIN:$PATH"
     for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-        if [ -f "$rc" ]; then
-            if ! grep -q "go/bin" "$rc"; then
-                echo -e '\n# Cybog toolchain PATH' >> "$rc"
-                echo 'export PATH="$PATH:$HOME/go/bin:$HOME/.local/bin"' >> "$rc"
-                log_success "Appended Go bin to $rc"
+        if [[ -f "$rc" ]]; then
+            if ! grep -q 'export PATH="\$BIN_DIR:\$LOCAL_BIN:\$PATH"' "$rc" 2>/dev/null; then
+                {
+                    echo ''
+                    echo '# Cybog toolchain — Go bins and pip user scripts'
+                    echo 'export BIN_DIR="$HOME/go/bin"'
+                    echo 'export LOCAL_BIN="$HOME/.local/bin"'
+                    echo 'export PATH="$BIN_DIR:$LOCAL_BIN:$PATH"'
+                } >> "$rc"
+                log_success "Appended Cybog PATH to $rc"
             fi
         fi
     done
 }
 
-# 3. Install Security Tools via Go
+# 2. Install Security Tools via Go
 install_security_tools() {
     log_info "Installing security toolchain..."
 
@@ -74,12 +81,16 @@ install_security_tools() {
     )
 
     for tool in "${!TOOLS[@]}"; do
-        if command -v "$tool" &>/dev/null; then
-            log_success "Tool already installed: $tool ($(command -v "$tool"))"
+        if [[ -x "$BIN_DIR/$tool" ]]; then
+            log_success "Tool already installed in \$BIN_DIR: $tool ($BIN_DIR/$tool)"
         else
+            found_path="$(command -v "$tool" 2>/dev/null || true)"
+            if [[ -n "$found_path" ]]; then
+                log_warn "Found $tool at $found_path (outside \$BIN_DIR). Reinstalling to \$BIN_DIR to ensure the Go binary wins over any shadowing script."
+            fi
             log_info "Installing $tool from ${TOOLS[$tool]}..."
             go install -v "${TOOLS[$tool]}"
-            log_success "Installed $tool"
+            log_success "Installed $tool to $BIN_DIR"
         fi
     done
 }
@@ -96,7 +107,14 @@ update_nuclei() {
 # 5. Download default wordlists if missing
 setup_wordlists() {
     WORDLIST_PATH="$SCRIPT_DIR/config/wordlists/common.txt"
-    if [ ! -f "$WORDLIST_PATH" ] || [ ! -s "$WORDLIST_PATH" ]; then
+    # Replace the placeholder if it is missing OR has fewer than 100 lines.
+    # The committed common.txt is a 10-line placeholder; this guard forces it
+    # to be replaced by SecLists' raft-small-words.txt on a fresh checkout.
+    line_count=0
+    if [[ -f "$WORDLIST_PATH" ]]; then
+        line_count="$(wc -l < "$WORDLIST_PATH")"
+    fi
+    if [[ "$line_count" -lt 100 ]]; then
         log_info "Fetching standard SecLists raft directory wordlist..."
         curl -sSL "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/raft-small-words.txt" \
             -o "$WORDLIST_PATH" || {
@@ -117,7 +135,7 @@ EOF
             }
         log_success "Wordlist established at $WORDLIST_PATH"
     else
-        log_success "Wordlist verified at $WORDLIST_PATH"
+        log_success "Wordlist verified at $WORDLIST_PATH ($line_count lines)"
     fi
 }
 

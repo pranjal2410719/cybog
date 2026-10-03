@@ -22,7 +22,7 @@ export class WebSocketManager {
   }
 
   connect(): void {
-    this.ws = new WebSocket(wsUrl(`/assessments/${this.assessmentId}`));
+    this.ws = new WebSocket(wsUrl(`/ws/assessments/${this.assessmentId}`));
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;

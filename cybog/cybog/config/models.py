@@ -2,7 +2,11 @@
 cybog/config/models.py — Pydantic models for config.yaml.
 """
 from __future__ import annotations
+
 import os
+import shutil
+from pathlib import Path
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -11,10 +15,29 @@ class ToolConfig(BaseModel):
     binary: str
     timeout: int = 300
     extra_args: list[str] = Field(default_factory=list)
+    version_args: list[str] = Field(default_factory=lambda: ["--version"])
+    bin_dirs: list[str] = Field(default_factory=list)
+
+    def resolve_binary(self) -> str:
+        name = self.binary
+        if not name:
+            return name
+        if os.path.sep in name or (os.path.altsep and os.path.altsep in name):
+            return name
+        expanded = [str(Path(d).expanduser()) for d in self.bin_dirs]
+        for d in expanded:
+            candidate = Path(d) / name
+            if candidate.is_file() and os.access(str(candidate), os.X_OK):
+                return str(candidate)
+        found = shutil.which(name)
+        if found:
+            return found
+        return name
 
 
 class FfufToolConfig(ToolConfig):
     wordlist: str = "./config/wordlists/common.txt"
+    max_targets: int = 10
 
 
 class NucleiToolConfig(ToolConfig):
@@ -25,18 +48,10 @@ class NucleiToolConfig(ToolConfig):
 class AuthToolConfig(ToolConfig):
     credentials: str = ""
     auth_method: str = "basic"  # basic | digest | bearer | custom
-    auth_url: str = ""
     extra_args: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _load_credentials_from_env(self) -> "AuthToolConfig":
-        """
-        Credentials default to empty and are read from CYBOG_AUTH_CREDENTIALS.
-
-        This keeps secrets out of config.yaml and out of version control. When
-        unset the field stays empty, which makes auth validation report itself
-        as not-applicable rather than failing an unrelated scan.
-        """
         if not self.credentials:
             env_value = os.environ.get("CYBOG_AUTH_CREDENTIALS", "")
             if env_value:
@@ -58,6 +73,16 @@ class ToolsConfig(BaseModel):
     auth: AuthToolConfig = Field(
         default_factory=lambda: AuthToolConfig(binary="httpx", enabled=False)
     )
+    bin_dirs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _propagate_bin_dirs(self) -> "ToolsConfig":
+        for child in (
+            self.subfinder, self.dnsx, self.httpx, self.naabu,
+            self.katana, self.ffuf, self.nuclei, self.auth,
+        ):
+            child.bin_dirs = list(self.bin_dirs)
+        return self
 
 
 class WorkersConfig(BaseModel):

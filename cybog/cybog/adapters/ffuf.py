@@ -24,7 +24,7 @@ _log = get_logger("adapters.ffuf")
 class FfufAdapter(ToolAdapter):
     def __init__(self, config: FfufToolConfig):
         self.config = config
-        self.binary = config.binary
+        self.binary = config.resolve_binary()
 
     def metadata(self) -> dict:
         return {
@@ -40,9 +40,7 @@ class FfufAdapter(ToolAdapter):
     def validate_input(self, job: StageJob, context: dict) -> ValidationResult:
         live_urls = context.get("httpx_urls", [])
         if not live_urls:
-            return ValidationResult(
-                valid=False, reason="No live URLs from httpx — nothing to fuzz"
-            )
+            return ValidationResult(valid=False, reason="No live URLs from httpx — nothing to fuzz")
         _valid, rejected = validate_url_list(live_urls)
         if rejected:
             _log.warning(
@@ -58,7 +56,6 @@ class FfufAdapter(ToolAdapter):
             )
         wordlist = self.config.wordlist
         if not is_safe_path_value(wordlist):
-            # Security gate: traversal / control chars in a path config must fail.
             return ValidationResult(
                 valid=False,
                 reason=(
@@ -66,70 +63,90 @@ class FfufAdapter(ToolAdapter):
                     f"(path traversal / control characters rejected)"
                 ),
             )
-        # A missing wordlist is NOT a validation failure: let the tool itself
-        # report the failure at runtime (preserve existing runtime behaviour).
         if not Path(wordlist).exists():
             _log.warning(
                 "ffuf wordlist not found on disk (tool will report failure at runtime): %r",
                 wordlist,
             )
+        else:
+            try:
+                wl_lines = sum(1 for _ in open(wordlist, "rb"))
+                _log.info("ffuf wordlist contains %d lines: %r", wl_lines, wordlist)
+            except OSError:
+                pass
         return ValidationResult(valid=True, reason=f"{len(live_urls)} URLs to fuzz")
 
     def build_command(self, job: StageJob, stage_dir: Path, context: dict) -> list[str]:
+        cmds = self.build_commands(job, stage_dir, context)
+        return cmds[0] if cmds else []
+
+    def build_commands(self, job: StageJob, stage_dir: Path, context: dict) -> list[list[str]]:
         live_urls = context.get("httpx_urls", [f"https://{job.target_domain}"])
         valid, rejected = validate_url_list(live_urls)
         if rejected:
             _log.warning(
-                "ffuf.build_command rejected %d hostile URL(s): %r",
+                "ffuf.build_commands rejected %d hostile URL(s): %r",
                 len(rejected), rejected,
             )
             raise ToolAdapterError(
-                f"Refusing to build ffuf command: {len(rejected)} URL(s) failed "
+                f"Refusing to build ffuf commands: {len(rejected)} URL(s) failed "
                 f"validation (argument injection / scope escape): {rejected}"
             )
         if not valid:
             raise ToolAdapterError("No valid URLs to fuzz")
-        # Use first live URL as the base
-        base_url = valid[0].rstrip("/") + "/FUZZ"
+
+        capped = valid[: self.config.max_targets]
+        if len(valid) > self.config.max_targets:
+            _log.warning(
+                "ffuf truncating target list from %d to max_targets=%d",
+                len(valid), self.config.max_targets,
+            )
+
         wordlist = self.config.wordlist
         if not is_safe_path_value(wordlist):
-            _log.warning(
-                "ffuf.build_command rejected unsafe wordlist path: %r", wordlist
-            )
+            _log.warning("ffuf.build_commands rejected unsafe wordlist path: %r", wordlist)
             raise ToolAdapterError(
                 f"Refusing to build ffuf command: config.wordlist '{wordlist}' "
                 f"is not a safe path (path traversal / control characters rejected)"
             )
-        # A missing wordlist is a runtime error reported by the tool itself —
-        # do not raise here so behaviour matches the documented contract.
         if not Path(wordlist).exists():
             _log.warning(
                 "ffuf wordlist not found on disk (tool will report failure): %r",
                 wordlist,
             )
-        out_file = stage_dir / "raw.json"
-        cmd = [
-            self.binary,
-            "-u", base_url,
-            "-w", self.config.wordlist,
-            "-o", str(out_file),
-            "-of", "json",
-            "-ac",           # Auto-calibrate baseline responses
-            "-mc", "200,201,204,301,302,307,401,403,405",
-            "-s",
-        ]
-        cmd.extend(self.config.extra_args)
-        return cmd
+
+        commands: list[list[str]] = []
+        for idx, url in enumerate(capped):
+            base_url = url.rstrip("/") + "/FUZZ"
+            out_file = stage_dir / f"raw.{idx}.json"
+            cmd = [
+                self.binary,
+                "-u", base_url,
+                "-w", self.config.wordlist,
+                "-o", str(out_file),
+                "-of", "json",
+                "-ac",
+                "-mc", "200,201,204,301,302,307,401,403,405",
+                "-s",
+            ]
+            cmd.extend(self.config.extra_args)
+            commands.append(cmd)
+        return commands
 
     def parse_output(self, tool_result: ToolResult, stage_dir: Path) -> list[dict]:
-        raw_file = stage_dir / "raw.json"
-        if raw_file.exists() and raw_file.stat().st_size > 0:
-            try:
-                data = json.loads(raw_file.read_text(encoding="utf-8"))
-                return data.get("results", [])
-            except json.JSONDecodeError:
-                _log.warning("ffuf raw.json is malformed")
-        # Fallback: try stdout
+        raw_files = sorted(stage_dir.glob("raw.*.json"))
+        results: list[dict] = []
+        for raw_file in raw_files:
+            if raw_file.exists() and raw_file.stat().st_size > 0:
+                try:
+                    data = json.loads(raw_file.read_text(encoding="utf-8"))
+                    batch = data.get("results", [])
+                    if isinstance(batch, list):
+                        results.extend(batch)
+                except json.JSONDecodeError:
+                    _log.warning("ffuf %s is malformed", raw_file)
+        if results:
+            return results
         if tool_result.stdout.strip():
             try:
                 data = json.loads(tool_result.stdout)
