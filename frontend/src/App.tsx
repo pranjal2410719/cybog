@@ -1,10 +1,14 @@
 /**
  * Cybog Frontend Application
- * 
- * Main React application with routing and layout.
+ *
+ * Two-pane Perplexity-style layout:
+ *  - Fixed left sidebar (~260px) with brand mark + nav
+ *  - Centered main column (max 900px)
+ *
+ * Mobile: sidebar collapses into a top bar with a hamburger drawer.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -17,127 +21,235 @@ import { AssessmentDashboard } from './components/AssessmentDashboard';
 import { AssessmentCreationForm } from './components/AssessmentForm';
 import { AssessmentDetail } from './components/AssessmentDetail';
 
-// Layout component with header and navigation
-function Layout() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+// ─── Icons (inline SVGs, ink / graphite coloured) ────────────────────────────
+
+function IconShield({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function IconGrid({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="14" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+    </svg>
+  );
+}
+
+function IconPlus({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function IconMenu({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function IconX({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// ─── Nav Item ─────────────────────────────────────────────────────────────────
+
+function NavItem({
+  to,
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className={`
+        flex items-center gap-3 px-3 py-2.5 rounded-[12px] text-[16px] font-normal
+        transition-colors duration-150 w-full
+        ${active
+          ? 'bg-deep-teal text-white'
+          : 'text-graphite hover:text-ink hover:bg-warm-mist/40'
+        }
+      `}
+    >
+      <span className="w-5 h-5 flex-shrink-0">{icon}</span>
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
+function Sidebar({ onClose }: { onClose?: () => void }) {
   const location = useLocation();
 
+  const nav = [
+    { to: '/', label: 'Dashboard', icon: <IconGrid className="w-5 h-5" /> },
+    { to: '/assessments/new', label: 'New Assessment', icon: <IconPlus className="w-5 h-5" /> },
+  ];
+
   return (
-    <div className="min-h-screen bg-cyborg-dark">
-      {/* Header */}
-      <header className="bg-cyborg-dark border-b border-cyborg-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <Link to="/" className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-cyborg-accent rounded-lg flex items-center justify-center">
-                  <span className="text-cyborg-dark font-bold text-lg">C</span>
-                </div>
-                <span className="text-xl font-bold text-white">Cybog</span>
-              </Link>
-            </div>
-
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex space-x-8">
-              <Link
-                to="/"
-                className={`text-sm font-medium transition-colors ${
-                  location.pathname === '/'
-                    ? 'text-cyborg-accent'
-                    : 'text-cyborg-muted hover:text-white'
-                }`}
-              >
-                Dashboard
-              </Link>
-              <Link
-                to="/assessments"
-                className={`text-sm font-medium transition-colors ${
-                  location.pathname.startsWith('/assessments')
-                    ? 'text-cyborg-accent'
-                    : 'text-cyborg-muted hover:text-white'
-                }`}
-              >
-                Assessments
-              </Link>
-            </nav>
-
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <button
-                type="button"
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="text-cyborg-muted hover:text-white"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isMenuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'}
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
+    <aside className="flex flex-col h-full py-5 px-3 gap-1">
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 px-3 mb-6">
+        <div className="w-7 h-7 flex items-center justify-center text-ink">
+          <IconShield className="w-7 h-7" />
         </div>
-
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden border-t border-cyborg-border">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              <Link
-                to="/"
-                onClick={() => setIsMenuOpen(false)}
-                className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                  location.pathname === '/'
-                    ? 'bg-cyborg-card text-cyborg-accent'
-                    : 'text-cyborg-muted hover:bg-cyborg-card hover:text-white'
-                }`}
-              >
-                Dashboard
-              </Link>
-              <Link
-                to="/assessments"
-                onClick={() => setIsMenuOpen(false)}
-                className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                  location.pathname.startsWith('/assessments')
-                    ? 'bg-cyborg-card text-cyborg-accent'
-                    : 'text-cyborg-muted hover:bg-cyborg-card hover:text-white'
-                }`}
-              >
-                Assessments
-              </Link>
-            </div>
-          </div>
+        <span className="text-[16px] font-medium text-ink tracking-tight">Cybor</span>
+        <span
+          className="ml-auto text-[11px] font-medium text-white px-2 py-0.5 rounded-full leading-none"
+          style={{ background: 'var(--color-deep-teal)' }}
+        >
+          NEW
+        </span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            className="ml-2 text-graphite hover:text-ink transition-colors"
+          >
+            <IconX className="w-5 h-5" />
+          </button>
         )}
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Outlet />
-      </main>
+      {/* Section label */}
+      <p className="px-3 mb-1 text-[12px] text-graphite uppercase tracking-wide">Navigation</p>
+
+      {/* Nav links */}
+      <nav className="flex flex-col gap-0.5">
+        {nav.map((item) => (
+          <NavItem
+            key={item.to}
+            to={item.to}
+            icon={item.icon}
+            label={item.label}
+            active={
+              item.to === '/'
+                ? location.pathname === '/'
+                : location.pathname.startsWith(item.to)
+            }
+            onClick={onClose}
+          />
+        ))}
+      </nav>
 
       {/* Footer */}
-      <footer className="bg-cyborg-dark border-t border-cyborg-border mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-cyborg-muted">
-              Cybog Security Assessment Platform
-            </div>
-            <div className="text-sm text-cyborg-muted">
-              Version 1.0.0
-            </div>
+      <div className="mt-auto px-3 pt-6 border-t border-warm-mist">
+        <p className="text-[12px] text-ash">Cybor Security Platform</p>
+        <p className="text-[11px] text-ash mt-0.5">v1.0.0 · Authorized use only</p>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Layout ───────────────────────────────────────────────────────────────────
+
+function Layout() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  return (
+    <div className="min-h-screen flex" style={{ background: 'var(--color-parchment)' }}>
+
+      {/* ── Desktop Sidebar ── */}
+      <div
+        className="hidden lg:flex flex-col flex-shrink-0 border-r border-warm-mist"
+        style={{
+          width: '260px',
+          background: '#f3f0eb', /* one shade darker than parchment */
+          position: 'sticky',
+          top: 0,
+          height: '100vh',
+          overflowY: 'auto',
+        }}
+      >
+        <Sidebar />
+      </div>
+
+      {/* ── Mobile Drawer Overlay ── */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          aria-modal="true"
+          role="dialog"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-ink/20"
+            onClick={() => setDrawerOpen(false)}
+          />
+          {/* Drawer */}
+          <div
+            className="absolute left-0 top-0 h-full w-64 border-r border-warm-mist shadow-subtle z-50"
+            style={{ background: '#f3f0eb' }}
+          >
+            <Sidebar onClose={() => setDrawerOpen(false)} />
           </div>
         </div>
-      </footer>
+      )}
+
+      {/* ── Main area ── */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Mobile top bar */}
+        <header
+          className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-warm-mist sticky top-0 z-30"
+          style={{ background: '#f3f0eb' }}
+        >
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            className="text-graphite hover:text-ink transition-colors"
+          >
+            <IconMenu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <IconShield className="w-5 h-5 text-ink" />
+            <span className="text-[15px] font-medium text-ink">Cybor</span>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 px-4 sm:px-6 lg:px-10 py-8">
+          <div className="max-w-[900px] mx-auto w-full">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
 
-// Dashboard Page
+// ─── Page wrappers ────────────────────────────────────────────────────────────
+
 function DashboardPage() {
   const navigate = useNavigate();
-
   return (
     <AssessmentDashboard
       onSelectAssessment={(id) => navigate(`/assessments/${id}`)}
@@ -145,15 +257,12 @@ function DashboardPage() {
   );
 }
 
-// Assessments List Page
 function AssessmentsPage() {
   return <AssessmentDashboard />;
 }
 
-// New Assessment Page
 function NewAssessmentPage() {
   const navigate = useNavigate();
-
   return (
     <div className="max-w-2xl mx-auto">
       <AssessmentCreationForm
@@ -163,12 +272,10 @@ function NewAssessmentPage() {
   );
 }
 
-// Assessment Detail Page
 function AssessmentDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const assessmentId = location.pathname.split('/')[2];
-
   return (
     <AssessmentDetail
       assessmentId={assessmentId}
@@ -177,89 +284,61 @@ function AssessmentDetailPage() {
   );
 }
 
-// RESERVED for a later step: findings view under an assessment.
 function AssessmentFindingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const assessmentId = location.pathname.split('/')[2];
-
   return (
     <div className="space-y-6">
       <button
         onClick={() => navigate(`/assessments/${assessmentId}`)}
-        className="px-3 py-1 text-sm bg-cyborg-card border border-cyborg-border text-cyborg-muted rounded-lg hover:bg-cyborg-card/50 transition-colors"
+        className="px-3 py-1.5 text-[14px] text-graphite border border-warm-mist rounded-btn hover:text-ink hover:border-ash transition-colors"
       >
-        Back
+        ← Back
       </button>
-      <div className="text-center py-12 bg-cyborg-card rounded-lg border border-cyborg-border">
-        <div className="text-cyborg-muted">Findings view for assessment {assessmentId}</div>
-        <p className="text-cyborg-muted text-sm mt-2">
-          Reserved for a later step.
-        </p>
+      <div className="text-center py-12 bg-soft-paper rounded-card border border-warm-mist shadow-subtle">
+        <p className="text-graphite text-[14px]">Findings view — coming soon</p>
       </div>
     </div>
   );
 }
 
-// RESERVED for a later step: reports view under an assessment.
 function AssessmentReportsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const assessmentId = location.pathname.split('/')[2];
-
   return (
     <div className="space-y-6">
       <button
         onClick={() => navigate(`/assessments/${assessmentId}`)}
-        className="px-3 py-1 text-sm bg-cyborg-card border border-cyborg-border text-cyborg-muted rounded-lg hover:bg-cyborg-card/50 transition-colors"
+        className="px-3 py-1.5 text-[14px] text-graphite border border-warm-mist rounded-btn hover:text-ink hover:border-ash transition-colors"
       >
-        Back
+        ← Back
       </button>
-      <div className="text-center py-12 bg-cyborg-card rounded-lg border border-cyborg-border">
-        <div className="text-cyborg-muted">Reports view for assessment {assessmentId}</div>
-        <p className="text-cyborg-muted text-sm mt-2">
-          Reserved for a later step.
-        </p>
+      <div className="text-center py-12 bg-soft-paper rounded-card border border-warm-mist shadow-subtle">
+        <p className="text-graphite text-[14px]">Reports view — coming soon</p>
       </div>
     </div>
   );
 }
 
-// Create router
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
-      {
-        path: '',
-        element: <DashboardPage />,
-      },
-      {
-        path: 'assessments',
-        element: <AssessmentsPage />,
-      },
-      {
-        path: 'assessments/new',
-        element: <NewAssessmentPage />,
-      },
-      {
-        path: 'assessments/:id',
-        element: <AssessmentDetailPage />,
-      },
-      {
-        path: 'assessments/:id/findings',
-        element: <AssessmentFindingsPage />,
-      },
-      {
-        path: 'assessments/:id/reports',
-        element: <AssessmentReportsPage />,
-      },
+      { path: '', element: <DashboardPage /> },
+      { path: 'assessments', element: <AssessmentsPage /> },
+      { path: 'assessments/new', element: <NewAssessmentPage /> },
+      { path: 'assessments/:id', element: <AssessmentDetailPage /> },
+      { path: 'assessments/:id/findings', element: <AssessmentFindingsPage /> },
+      { path: 'assessments/:id/reports', element: <AssessmentReportsPage /> },
     ],
   },
 ]);
 
-// App component
 export default function App() {
   return <RouterProvider router={router} />;
 }

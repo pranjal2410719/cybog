@@ -3,81 +3,70 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 220 10% 10%;
-  --primary: 160 84% 45%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 10% 90%;
-  --secondary-foreground: 220 10% 20%;
-  --muted: 220 10% 95%;
-  --muted-foreground: 220 10% 40%;
-  --accent: 160 84% 45%;
-  --destructive: 0 84% 60%;
-  --border: 220 10% 90%;
-  --input: 220 10% 90%;
-  --ring: 160 84% 45%;
-}
+  /* Perplexity parchment design tokens */
+  --color-parchment: #faf8f5;
+  --color-soft-paper: #fdfbfa;
+  --color-warm-mist: #d1d1cd;
+  --color-ash: #92918b;
+  --color-graphite: #72706b;
+  --color-ink: #27251e;
+  --color-pure-black: #000000;
+  --color-deep-teal: #016a71;
 
-.dark {
-  --background: 0 0% 10%;
-  --foreground: 0 0% 90%;
-  --primary: 160 84% 50%;
-  --primary-foreground: 0 0% 10%;
-  --secondary: 220 10% 20%;
-  --secondary-foreground: 0 0% 90%;
-  --muted: 220 10% 15%;
-  --muted-foreground: 220 10% 60%;
-  --accent: 160 84% 60%;
-  --destructive: 0 84% 60%;
-  --border: 220 10% 25%;
-  --input: 220 10% 25%;
-  --ring: 160 84% 50%;
+  --radius-cards: 16px;
+  --radius-chips: 9999px;
+  --radius-inputs: 12px;
+  --radius-buttons: 6px;
+
+  --shadow-subtle: rgba(0, 0, 0, 0.08) 0px 1px 2px 0px;
+
+  --page-max-width: 900px;
+  --sidebar-width: 260px;
 }
 
 html {
-  font-family: Inter, sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  font-weight: 400;
+  background-color: var(--color-parchment);
+  color: var(--color-ink);
 }
 
 body {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
+  background-color: var(--color-parchment);
+  color: var(--color-ink);
   min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
-  border: 0 solid hsl(var(--border));
 }
 
-button {
-  vertical-align: middle;
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-warm-mist); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ash); }
+
+button, input, select, textarea {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
 }
 
-input {
-  font-family: inherit;
-  font-size: inherit;
-  line-height: inherit;
+/* Focus ring using deep teal */
+*:focus-visible {
+  outline: 2px solid var(--color-deep-teal);
+  outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 90%;
-    --primary: 160 84% 50%;
-    --primary-foreground: 0 0% 10%;
-    --secondary: 220 10% 20%;
-    --secondary-foreground: 0 0% 90%;
-    --muted: 220 10% 15%;
-    --muted-foreground: 220 10% 60%;
-    --accent: 160 84% 60%;
-    --destructive: 0 84% 60%;
-    --border: 220 10% 25%;
-    --input: 220 10% 25%;
-    --ring: 160 84% 50%;
-  }
+/* Utility: parchment-glow border for inputs */
+.input-glow {
+  border: 1px solid var(--color-warm-mist);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-glow:focus-within {
+  border-color: color-mix(in oklch, #016a71 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, #016a71 15%, transparent);
 }

@@ -178,11 +178,11 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
   };
 }
 
-const CONNECTION_COPY: Record<ConnectionState, { label: string; className: string }> = {
-  connecting: { label: 'Connecting…', className: 'text-cyborg-muted' },
-  connected: { label: 'Live', className: 'text-green-400' },
-  reconnecting: { label: 'Reconnecting… (showing last known data)', className: 'text-yellow-400' },
-  closed: { label: 'Offline (polling every 30s)', className: 'text-yellow-400' },
+const CONNECTION_COPY: Record<ConnectionState, { label: string; dot: string; text: string }> = {
+  connecting:   { label: 'Connecting…',                     dot: '#92918b', text: '#72706b' },
+  connected:    { label: 'Live',                            dot: '#016a71', text: '#016a71' },
+  reconnecting: { label: 'Reconnecting… (last known data)', dot: '#c06000', text: '#9a6700' },
+  closed:       { label: 'Offline — polling every 30 s',    dot: '#c06000', text: '#9a6700' },
 };
 
 /** Honest label for a per-stage job rollup. */
@@ -196,42 +196,30 @@ function stageLabel(stage: LiveStage): string {
   return parts.join(' · ');
 }
 
-function stageBadge(status: string): string {
+function stageBadgeStyle(status: string): React.CSSProperties {
   switch (status) {
-    case 'RUNNING':
-      return 'bg-blue-500/20 text-blue-300';
-    case 'COMPLETED':
-      return 'bg-green-500/20 text-green-300';
-    case 'FAILED':
-      return 'bg-red-500/20 text-red-300';
-    case 'PENDING':
-      return 'bg-cyborg-card text-cyborg-muted';
-    default:
-      return 'bg-cyborg-card text-cyborg-muted';
+    case 'RUNNING':   return { background: '#d4edeb', color: '#016a71' };
+    case 'COMPLETED': return { background: '#d4edeb', color: '#016a71' };
+    case 'FAILED':    return { background: '#fde8e8', color: '#c0392b' };
+    default:          return { background: '#e8e5e0', color: '#72706b' };
   }
 }
 
-function targetBadge(status: string): string {
+function targetBadgeStyle(status: string): React.CSSProperties {
   switch (status) {
-    case 'COMPLETED':
-      return 'bg-green-500/20 text-green-300';
-    case 'RUNNING':
-      return 'bg-blue-500/20 text-blue-300';
+    case 'COMPLETED': return { background: '#d4edeb', color: '#016a71' };
+    case 'RUNNING':   return { background: '#d4edeb', color: '#016a71' };
     case 'FAILED':
-    case 'ERROR':
-      return 'bg-red-500/20 text-red-300';
-    case 'SKIPPED':
-      return 'bg-cyborg-card text-cyborg-muted';
-    default:
-      return 'bg-cyborg-card text-cyborg-muted';
+    case 'ERROR':     return { background: '#fde8e8', color: '#c0392b' };
+    default:          return { background: '#e8e5e0', color: '#72706b' };
   }
 }
 
 export function ConnectionBadge({ status }: { status: ConnectionState }) {
   const copy = CONNECTION_COPY[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs ${copy.className}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: copy.text }}>
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: copy.dot }} />
       {copy.label}
     </span>
   );
@@ -247,18 +235,18 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
 
   if (status.notFound) {
     return (
-      <div className="p-4 bg-red-600/10 border border-red-600/40 rounded-lg">
-        <p className="text-red-300 text-sm">
-          The backend does not know this assessment id.
-        </p>
+      <div className="px-4 py-3 rounded-card text-[14px]"
+           style={{ background: '#fdf3f3', border: '1px solid #f5c6c6', color: '#c0392b' }}>
+        The backend does not know this assessment id.
       </div>
     );
   }
 
   if (!snapshot) {
     return (
-      <div className="p-4 bg-cyborg-card border border-cyborg-border rounded-lg">
-        <p className="text-cyborg-muted text-sm">Loading live status…</p>
+      <div className="px-4 py-3 rounded-card border border-warm-mist text-[14px] text-graphite"
+           style={{ background: '#fdfbfa' }}>
+        Loading live status…
       </div>
     );
   }
@@ -271,67 +259,75 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
 
   return (
     <div className="space-y-5">
+      {/* Connection + timestamp row */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <ConnectionBadge status={connection} />
         <div className="flex items-center gap-3">
-          <span className="text-xs text-cyborg-muted">
+          <span className="text-[12px] text-graphite">
             {live
-              ? `Snapshot ${new Date(snapshot.timestamp).toLocaleTimeString()}`
+              ? `Snapshot at ${new Date(snapshot.timestamp).toLocaleTimeString()}`
               : 'Live data may be stale'}
           </span>
           <button
             type="button"
             onClick={onRefresh}
-            className="px-2 py-1 text-xs bg-cyborg-card border border-cyborg-border text-cyborg-muted rounded hover:text-white"
+            className="px-2 py-1 text-[12px] text-graphite border border-warm-mist rounded-btn
+                       hover:text-ink hover:border-ash transition-colors"
+            style={{ background: '#faf8f5' }}
           >
-            Refresh now
+            Refresh
           </button>
         </div>
       </div>
 
+      {/* Reconnect warning */}
       {connection !== 'connected' && (
-        <p className="text-xs text-yellow-400/90 bg-yellow-500/10 border border-yellow-600/30 rounded px-3 py-2">
-          The live socket is {connection}. Values below are the last snapshot the backend returned;
-          the 30s REST fallback keeps them roughly current until the socket recovers.
+        <p className="text-[12px] px-3 py-2 rounded-card"
+           style={{ background: '#fff8ee', border: '1px solid #f5d5a0', color: '#9a6700' }}>
+          The live socket is {connection}. Values below are the last snapshot; the 30s REST fallback
+          keeps them roughly current until the socket recovers.
         </p>
       )}
 
+      {/* Overall progress */}
       <div>
-        <div className="flex justify-between text-xs text-cyborg-muted mb-1">
-          <span>
-            {snapshot.jobs_completed}/{snapshot.jobs_total} jobs terminal
-          </span>
-          <span className="text-white">{snapshot.completion_percentage}%</span>
+        <div className="flex justify-between text-[12px] text-graphite mb-1">
+          <span>{snapshot.jobs_completed}/{snapshot.jobs_total} jobs terminal</span>
+          <span className="font-medium text-ink">{snapshot.completion_percentage}%</span>
         </div>
-        <div className="w-full h-2 bg-cyborg-darker rounded-full overflow-hidden">
+        <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: '#e8e5e0' }}>
           <div
-            className="h-full bg-cyborg-accent rounded-full"
-            style={{ width: `${Math.min(100, Math.max(0, snapshot.completion_percentage))}%` }}
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${Math.min(100, Math.max(0, snapshot.completion_percentage))}%`,
+              background: '#016a71',
+            }}
           />
         </div>
-        <p className="text-xs text-cyborg-muted mt-1">
+        <p className="text-[12px] text-graphite mt-1">
           {snapshot.targets_completed}/{snapshot.targets_total} targets completed ·{' '}
           {snapshot.jobs_failed} failed job{snapshot.jobs_failed === 1 ? '' : 's'}
         </p>
       </div>
 
+      {/* Stages */}
       <div>
-        <h3 className="text-sm font-semibold text-white mb-2">Stages</h3>
+        <h3 className="text-[13px] font-medium text-graphite uppercase tracking-wide mb-2">Stages</h3>
         {observed.length === 0 ? (
-          <p className="text-xs text-cyborg-muted">
-            No stage jobs have been enqueued yet.
-          </p>
+          <p className="text-[12px] text-graphite">No stage jobs have been enqueued yet.</p>
         ) : (
           <ul className="space-y-1">
             {observed.map((stage: LiveStage) => (
               <li
                 key={stage.stage}
-                className="flex items-center justify-between gap-2 py-1 px-2 bg-cyborg-card rounded border border-cyborg-border"
+                className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-[8px] border border-warm-mist"
+                style={{ background: '#fdfbfa' }}
               >
-                <span className="font-mono text-sm text-white">{stage.stage}</span>
-                <span className="text-xs text-cyborg-muted">{stageLabel(stage)}</span>
+                <span className="font-mono text-[13px] text-ink">{stage.stage}</span>
+                <span className="text-[12px] text-graphite flex-1 text-center">{stageLabel(stage)}</span>
                 <span
-                  className={`text-xs px-2 py-0.5 rounded ${stageBadge(stage.status)}`}
+                  className="text-[11px] px-2 py-0.5 rounded-chip font-medium leading-none"
+                  style={stageBadgeStyle(stage.status)}
                   title="Rollup of this stage's job rows, not an emitted event"
                 >
                   {stage.status}
@@ -342,63 +338,70 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
         )}
 
         {notEnqueued.length > 0 && (
-          <div className="mt-2">
-            <p className="text-xs text-cyborg-muted mb-1">Not started</p>
-            <ul className="flex flex-wrap gap-1">
+          <div className="mt-3">
+            <p className="text-[12px] text-graphite mb-1">Not started yet</p>
+            <ul className="flex flex-wrap gap-1.5">
               {notEnqueued.map((stage) => (
                 <li
                   key={stage}
-                  className="text-xs px-2 py-0.5 rounded bg-cyborg-darker text-cyborg-muted border border-cyborg-border"
-                  title="No jobs enqueued for this stage yet — this is not a failure and not a skip"
+                  className="text-[12px] px-2 py-0.5 rounded-chip border border-warm-mist text-graphite"
+                  style={{ background: '#faf8f5' }}
+                  title="No jobs enqueued for this stage yet — not a failure or skip"
                 >
                   {stage}
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-cyborg-muted mt-1">
-              A stage appears above only once the scheduler enqueues jobs for it. Absence means “not
-              started”, not “failed” or “skipped”. Stages run concurrently, so several can be running
-              at the same time
+            <p className="text-[12px] text-graphite mt-1.5">
+              A stage appears above only once the scheduler enqueues jobs for it. Absence means "not
+              started", not "failed" or "skipped". Stages run concurrently
               {snapshot.running_stages?.length
-                ? ` (currently: ${snapshot.running_stages.join(', ')})`
-                : ''}
-              .
+                ? ` (running: ${snapshot.running_stages.join(', ')})`
+                : ''}.
             </p>
           </div>
         )}
       </div>
 
+      {/* Targets */}
       <div>
-        <h3 className="text-sm font-semibold text-white mb-2">
+        <h3 className="text-[13px] font-medium text-graphite uppercase tracking-wide mb-2">
           Targets ({targets.length})
         </h3>
         {targets.length === 0 ? (
-          <p className="text-xs text-cyborg-muted">No targets loaded yet.</p>
+          <p className="text-[12px] text-graphite">No targets loaded yet.</p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {targets.map((target) => (
               <li
                 key={target.target_id}
-                className="py-1 px-2 bg-cyborg-card rounded border border-cyborg-border"
+                className="py-2 px-3 rounded-[8px] border border-warm-mist"
+                style={{ background: '#fdfbfa' }}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-white truncate">{target.domain}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded ${targetBadge(target.status)}`}>
+                  <span className="text-[13px] text-ink truncate">{target.domain}</span>
+                  <span
+                    className="text-[11px] px-2 py-0.5 rounded-chip font-medium leading-none flex-shrink-0"
+                    style={targetBadgeStyle(target.status)}
+                  >
                     {target.status}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1 bg-cyborg-darker rounded-full overflow-hidden">
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: '#e8e5e0' }}>
                     <div
-                      className="h-full bg-cyborg-accent"
-                      style={{ width: `${Math.min(100, Math.max(0, target.completion_percentage))}%` }}
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, target.completion_percentage))}%`,
+                        background: '#016a71',
+                      }}
                     />
                   </div>
-                  <span className="text-xs text-cyborg-muted w-24 text-right">
+                  <span className="text-[11px] text-graphite whitespace-nowrap">
                     {target.completed_jobs}/{target.total_jobs} jobs
                   </span>
-                  <span className="text-xs text-cyborg-muted w-16 text-right">
-                    {target.findings_count} find.
+                  <span className="text-[11px] text-graphite whitespace-nowrap">
+                    {target.findings_count} findings
                   </span>
                 </div>
               </li>
@@ -407,16 +410,20 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
         )}
       </div>
 
+      {/* Failed jobs */}
       {failedJobs.length > 0 && (
-        <details className="bg-cyborg-card border border-cyborg-border rounded-lg p-3">
-          <summary className="text-sm text-white cursor-pointer">
+        <details
+          className="rounded-card border border-warm-mist p-3"
+          style={{ background: '#fdfbfa' }}
+        >
+          <summary className="text-[13px] text-ink cursor-pointer">
             {failedJobs.length} failed job{failedJobs.length === 1 ? '' : 's'}
           </summary>
           <ul className="mt-2 space-y-1">
             {failedJobs.map((job) => (
-              <li key={job.job_id} className="text-xs text-cyborg-muted">
-                <span className="font-mono text-red-300">{job.stage}</span> /{' '}
-                <span className="text-white">{job.target_id}</span>
+              <li key={job.job_id} className="text-[12px] text-graphite">
+                <span className="font-mono" style={{ color: '#c0392b' }}>{job.stage}</span>{' '}
+                / <span className="text-ink">{job.target_id}</span>
                 {job.error ? ` — ${job.error}` : ''}
               </li>
             ))}

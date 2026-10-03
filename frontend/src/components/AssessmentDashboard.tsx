@@ -1,7 +1,10 @@
 /**
  * Assessment Dashboard Component
  *
- * Shows a list of assessments with their status, progress, and actions.
+ * Perplexity-style parchment design:
+ * - Suggestion-card style assessment rows (soft-paper bg, 16px radius, 1px shadow)
+ * - Status pills with deep-teal active state
+ * - Ghost buttons for secondary actions, ink-fill for primary
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -9,16 +12,170 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { AssessmentResponse } from '../lib/models';
 
-// Assessment status badge colors
-const statusColors: Record<string, string> = {
-  CREATED: 'bg-gray-100 text-gray-800',
-  RUNNING: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  FAILED: 'bg-red-100 text-red-800',
-  CANCELLED: 'bg-yellow-100 text-yellow-800',
-  RESUMING: 'bg-purple-100 text-purple-800',
-  AWAITING_VALIDATION: 'bg-orange-100 text-orange-800',
+// ─── Status pill ──────────────────────────────────────────────────────────────
+
+const statusStyles: Record<string, { bg: string; text: string }> = {
+  CREATED:              { bg: '#e8e5e0', text: '#72706b' },
+  RUNNING:              { bg: 'color-mix(in oklch, #016a71 15%, #faf8f5)', text: '#016a71' },
+  COMPLETED:            { bg: '#e3f2f0', text: '#016a71' },
+  FAILED:               { bg: '#fde8e8', text: '#c0392b' },
+  CANCELLED:            { bg: '#fdf3e3', text: '#9a6700' },
+  RESUMING:             { bg: '#ede8f8', text: '#6d4fc9' },
+  AWAITING_VALIDATION:  { bg: '#fff0e0', text: '#c06000' },
 };
+
+function StatusPill({ status }: { status: string }) {
+  const s = statusStyles[status] ?? { bg: '#e8e5e0', text: '#72706b' };
+  return (
+    <span
+      className="inline-flex items-center px-2.5 py-0.5 rounded-chip text-[11px] font-medium leading-none"
+      style={{ background: s.bg, color: s.text }}
+    >
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+
+function ProgressBar({ pct }: { pct: number }) {
+  return (
+    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: '#e8e5e0' }}>
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%`, background: '#016a71' }}
+      />
+    </div>
+  );
+}
+
+// ─── Assessment Card ──────────────────────────────────────────────────────────
+
+function AssessmentCard({
+  assessment,
+  onClick,
+  onStart,
+  onCancel,
+}: {
+  assessment: AssessmentResponse;
+  onClick: () => void;
+  onStart: () => void;
+  onCancel: () => void;
+}) {
+  const pct = assessment.progress?.completion_percentage ?? 0;
+  const isRunning = assessment.status === 'RUNNING' || assessment.status === 'RESUMING';
+
+  return (
+    <div
+      onClick={onClick}
+      className="cursor-pointer rounded-card border border-warm-mist shadow-subtle
+                 transition-all duration-150 hover:shadow-md hover:border-ash"
+      style={{ background: '#fdfbfa', padding: '16px' }}
+    >
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Teal dot for running */}
+          {isRunning && (
+            <span className="flex-shrink-0 w-2 h-2 rounded-full animate-pulse" style={{ background: '#016a71' }} />
+          )}
+          <h3 className="text-[16px] font-medium text-ink truncate">
+            {assessment.name || assessment.assessment_id}
+          </h3>
+          <StatusPill status={assessment.status} />
+        </div>
+
+        {/* Action buttons — stop propagation so card click doesn't fire */}
+        <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          {assessment.status === 'CREATED' && (
+            <button
+              onClick={onStart}
+              className="px-3 py-1 text-[13px] font-medium rounded-btn border border-warm-mist
+                         text-graphite hover:text-ink hover:border-ash transition-colors"
+            >
+              Start
+            </button>
+          )}
+          {isRunning && (
+            <button
+              onClick={onCancel}
+              className="px-3 py-1 text-[13px] font-medium rounded-btn border border-warm-mist
+                         text-graphite hover:text-ink hover:border-ash transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Meta row */}
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-graphite">
+        <span>
+          <span className="text-ash">Created</span>{' '}
+          {new Date(assessment.created_at).toLocaleDateString(undefined, {
+            day: 'numeric', month: 'short', year: 'numeric',
+          })}
+        </span>
+        <span>
+          <span className="text-ash">Profile</span>{' '}
+          <span className="capitalize">{assessment.profile}</span>
+        </span>
+        <span>
+          <span className="text-ash">Findings</span>{' '}
+          {assessment.findings_count ?? 0}
+        </span>
+        {(assessment.pending_validation_count ?? 0) > 0 && (
+          <span style={{ color: '#c06000' }}>
+            {assessment.pending_validation_count} pending validation
+          </span>
+        )}
+      </div>
+
+      {/* Progress */}
+      {pct > 0 && (
+        <div className="mt-4">
+          <div className="flex justify-between text-[12px] text-graphite mb-1">
+            <span>Progress</span>
+            <span className="text-ink font-medium">{pct.toFixed(1)}%</span>
+          </div>
+          <ProgressBar pct={pct} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <div className="rounded-card border border-warm-mist shadow-subtle text-center py-14 px-8"
+         style={{ background: '#fdfbfa' }}>
+      {/* Icon */}
+      <div className="mx-auto mb-4 w-12 h-12 rounded-card flex items-center justify-center"
+           style={{ background: '#e8e5e0' }}>
+        <svg className="w-6 h-6 text-graphite" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M9 12h6m-3-3v6m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <p className="text-[16px] text-ink font-medium mb-1">No assessments yet</p>
+      <p className="text-[14px] text-graphite mb-6">
+        Create your first assessment to start scanning targets.
+      </p>
+      <button
+        onClick={onNew}
+        className="px-5 py-2 text-[14px] font-medium text-parchment rounded-input
+                   transition-colors hover:opacity-90"
+        style={{ background: '#27251e' }}
+      >
+        Create Assessment
+      </button>
+    </div>
+  );
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 
 interface AssessmentDashboardProps {
   onSelectAssessment?: (id: string) => void;
@@ -38,7 +195,7 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
       setAssessments(data);
     } catch (err) {
       console.error('Failed to fetch assessments:', err);
-      setError('Failed to load assessments');
+      setError('Failed to load assessments. Is the backend running?');
       setAssessments([]);
     } finally {
       setLoading(false);
@@ -47,180 +204,91 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
 
   useEffect(() => {
     fetchAssessments();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchAssessments, 30000);
     return () => clearInterval(interval);
   }, [fetchAssessments]);
 
-  const handleStartAssessment = async (assessmentId: string) => {
+  const handleStartAssessment = async (id: string) => {
     try {
-      await api.startAssessment(assessmentId);
-      fetchAssessments(); // Refresh the list
+      await api.startAssessment(id);
+      fetchAssessments();
     } catch (err) {
       console.error('Failed to start assessment:', err);
-      setError('Failed to start assessment');
     }
   };
 
-  const handleCancelAssessment = async (assessmentId: string) => {
+  const handleCancelAssessment = async (id: string) => {
     try {
-      await api.cancelAssessment(assessmentId);
-      fetchAssessments(); // Refresh the list
+      await api.cancelAssessment(id);
+      fetchAssessments();
     } catch (err) {
       console.error('Failed to cancel assessment:', err);
-      setError('Failed to cancel assessment');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-cyborg-muted">Loading assessments...</div>
-      </div>
-    );
-  }
-
-  // Network/HTTP failure: never fall through to the empty state.
-  if (error) {
-    return (
-      <div className="px-4 py-3 bg-red-600/20 border border-red-600/50 rounded-lg text-red-400">
-        {error}
-        <button
-          onClick={() => fetchAssessments()}
-          className="ml-4 underline"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  // Only a successful request with zero results reaches this state.
-  if (assessments.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Assessments</h1>
-          <button
-            onClick={() => navigate('/assessments/new')}
-            className="px-4 py-2 bg-cyborg-accent text-cyborg-dark font-medium rounded-lg hover:bg-cyborg-accent/90 transition-colors"
-          >
-            New Assessment
-          </button>
-        </div>
-        <div className="text-center py-12 bg-cyborg-card rounded-lg border border-cyborg-border">
-          <div className="text-cyborg-muted mb-4">No assessments yet</div>
-          <button
-            onClick={() => navigate('/assessments/new')}
-            className="px-4 py-2 bg-cyborg-accent text-cyborg-dark font-medium rounded-lg hover:bg-cyborg-accent/90 transition-colors"
-          >
-            Create Your First Assessment
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Assessments</h1>
+    <div className="space-y-8">
+      {/* Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-[22px] font-medium text-ink">Assessments</h1>
+          <p className="text-[14px] text-graphite mt-0.5">
+            Monitor and manage your security scans.
+          </p>
+        </div>
         <button
           onClick={() => navigate('/assessments/new')}
-          className="px-4 py-2 bg-cyborg-accent text-cyborg-dark font-medium rounded-lg hover:bg-cyborg-accent/90 transition-colors"
+          className="px-4 py-2 text-[14px] font-medium text-parchment rounded-input
+                     transition-opacity hover:opacity-90 flex-shrink-0"
+          style={{ background: '#27251e' }}
         >
-          New Assessment
+          + New Assessment
         </button>
       </div>
 
-      <div className="grid gap-4">
-        {assessments.map((assessment) => (
-          <div
-            key={assessment.assessment_id}
-            className="bg-cyborg-card rounded-lg border border-cyborg-border p-4 hover:border-cyborg-accent/50 transition-colors cursor-pointer"
-            onClick={() => onSelectAssessment?.(assessment.assessment_id)}
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 rounded-card border border-warm-mist animate-pulse"
+                 style={{ background: '#fdfbfa' }} />
+          ))}
+        </div>
+      )}
+
+      {/* Error */}
+      {!loading && error && (
+        <div className="rounded-card border border-warm-mist p-4 flex items-center justify-between"
+             style={{ background: '#fdf3f3' }}>
+          <p className="text-[14px]" style={{ color: '#c0392b' }}>{error}</p>
+          <button
+            onClick={fetchAssessments}
+            className="px-3 py-1 text-[13px] rounded-btn border border-warm-mist text-graphite hover:text-ink transition-colors"
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <h3 className="text-lg font-medium text-white">
-                  {assessment.name || assessment.assessment_id}
-                </h3>
-                <span
-                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    statusColors[assessment.status] || 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {assessment.status}
-                </span>
-              </div>
-              <div className="flex space-x-2">
-                {assessment.status === 'CREATED' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartAssessment(assessment.assessment_id);
-                    }}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                  >
-                    Start
-                  </button>
-                )}
-                {(assessment.status === 'RUNNING' || assessment.status === 'RESUMING') && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCancelAssessment(assessment.assessment_id);
-                    }}
-                    className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
+            Retry
+          </button>
+        </div>
+      )}
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-cyborg-muted">Created:</span>{' '}
-                <span className="text-white">
-                  {new Date(assessment.created_at).toLocaleDateString()}
-                </span>
-              </div>
-              <div>
-                <span className="text-cyborg-muted">Profile:</span>{' '}
-                <span className="text-white">{assessment.profile}</span>
-              </div>
-              <div>
-                <span className="text-cyborg-muted">Findings:</span>{' '}
-                <span className="text-white">{assessment.findings_count}</span>
-              </div>
-              <div>
-                <span className="text-cyborg-muted">Pending Validation:</span>{' '}
-                <span className="text-white">{assessment.pending_validation_count}</span>
-              </div>
-            </div>
+      {/* Empty state */}
+      {!loading && !error && assessments.length === 0 && (
+        <EmptyState onNew={() => navigate('/assessments/new')} />
+      )}
 
-            {assessment.progress?.completion_percentage !== undefined && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-cyborg-muted">Progress</span>
-                  <span className="text-white">
-                    {assessment.progress.completion_percentage.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="h-2 bg-cyborg-dark rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-cyborg-accent rounded-full transition-all"
-                    style={{
-                      width: `${assessment.progress.completion_percentage}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Assessment cards */}
+      {!loading && !error && assessments.length > 0 && (
+        <div className="grid gap-3">
+          {assessments.map((a) => (
+            <AssessmentCard
+              key={a.assessment_id}
+              assessment={a}
+              onClick={() => onSelectAssessment?.(a.assessment_id)}
+              onStart={() => handleStartAssessment(a.assessment_id)}
+              onCancel={() => handleCancelAssessment(a.assessment_id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

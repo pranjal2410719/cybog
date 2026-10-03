@@ -1,13 +1,11 @@
 /**
- * Assessment Creation Form Component
+ * Assessment Creation Form — Perplexity parchment redesign
  *
- * Supports two entry modes that both feed the SAME backend/Cybog pipeline:
- *   - Single Target:  type a domain or URL
- *   - Multiple Targets: upload a .txt manifest
- *
- * Targets are normalized and previewed before anything is submitted. The form
- * contains no scanner logic and never builds a command — it only posts to the
- * REST API.
+ * - Hero-style section heading
+ * - Pill chip mode selector (deep-teal active)
+ * - Input-glow search-style fields
+ * - Drag-drop file zones as ghost-card areas
+ * - Ink-fill submit button
  */
 
 import { useMemo, useState } from 'react';
@@ -26,10 +24,8 @@ import {
 
 type Mode = 'single' | 'multiple';
 
-/**
- * Drag-and-drop + file-picker control. The picker is the mandatory path;
- * drag/drop is a convenience layered on top and must never be the only way in.
- */
+// ─── File drop zone ───────────────────────────────────────────────────────────
+
 function FileInput({
   label,
   fieldLabel,
@@ -39,7 +35,6 @@ function FileInput({
   fileName,
 }: {
   label: string;
-  /** Distinct accessible name — two fields must not share one. */
   fieldLabel: string;
   acceptedTypes: string[];
   onFileChange: (file: File) => void;
@@ -64,44 +59,66 @@ function FileInput({
   };
 
   return (
-    <div>
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-lg py-8 px-4 text-center transition-colors ${
-          isDragging
-            ? 'bg-cyborg-accent/10 border-cyborg-accent'
-            : 'border-cyborg-border'
-        }`}
-      >
-        {fileName ? (
-          <p className="text-cyborg-accent text-sm font-medium">{fileName}</p>
-        ) : (
-          <p className="text-cyborg-muted text-sm">{label}</p>
-        )}
-        <label
-          htmlFor={inputId}
-          className="inline-block mt-2 px-3 py-1 bg-cyborg-card border border-cyborg-border
-                     text-cyborg-muted text-sm rounded cursor-pointer hover:border-cyborg-accent
-                     hover:text-cyborg-accent transition-colors"
-        >
-          {fieldLabel}
-        </label>
-        <input
-          id={inputId}
-          type="file"
-          accept={acceptedTypes.join(',')}
-          onChange={handleChange}
-          className="hidden"
-        />
+    <div
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={handleDrop}
+      className={`
+        rounded-card border-2 border-dashed py-8 px-4 text-center
+        transition-all duration-150
+        ${isDragging
+          ? 'border-deep-teal bg-[color-mix(in_oklch,#016a71_8%,#faf8f5)]'
+          : 'border-warm-mist hover:border-ash'
+        }
+      `}
+      style={{ background: isDragging ? undefined : '#fdfbfa' }}
+    >
+      {/* Upload icon */}
+      <div className="mx-auto mb-3 w-10 h-10 rounded-card flex items-center justify-center"
+           style={{ background: '#e8e5e0' }}>
+        <svg className="w-5 h-5 text-graphite" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
       </div>
+
+      {fileName ? (
+        <p className="text-[14px] font-medium" style={{ color: '#016a71' }}>{fileName}</p>
+      ) : (
+        <p className="text-[14px] text-graphite">{label}</p>
+      )}
+
+      <label
+        htmlFor={inputId}
+        className="inline-block mt-3 px-3 py-1.5 text-[13px] text-graphite
+                   border border-warm-mist rounded-btn cursor-pointer
+                   hover:text-ink hover:border-ash transition-colors"
+        style={{ background: '#faf8f5' }}
+      >
+        {fieldLabel}
+      </label>
+      <input
+        id={inputId}
+        type="file"
+        accept={acceptedTypes.join(',')}
+        onChange={handleChange}
+        className="hidden"
+      />
     </div>
   );
 }
+
+// ─── Section label ────────────────────────────────────────────────────────────
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="block text-[13px] text-graphite mb-1.5 font-medium">
+      {children}
+    </label>
+  );
+}
+
+// ─── Main form ────────────────────────────────────────────────────────────────
 
 export function AssessmentCreationForm({
   onAssessmentCreated,
@@ -111,18 +128,11 @@ export function AssessmentCreationForm({
   const [mode, setMode] = useState<Mode>('single');
   const [name, setName] = useState('');
   const [profile, setProfile] = useState<'standard' | 'quick'>('standard');
-
-  // Single-target raw text, exactly as typed.
   const [singleTarget, setSingleTarget] = useState('');
-
-  // Multiple-target manifest entries.
   const [entries, setEntries] = useState<TargetEntry[]>([]);
   const [targetsFileName, setTargetsFileName] = useState('');
-
-  // Optional scope override. When empty, scope is derived from the targets.
   const [scopePatterns, setScopePatterns] = useState<string[]>([]);
   const [scopeFileName, setScopeFileName] = useState('');
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,8 +153,6 @@ export function AssessmentCreationForm({
     readText(file, (text) => setScopePatterns(parseScopeText(text)));
   };
 
-  // In single mode the typed value becomes a one-entry list so both modes
-  // share one code path downstream.
   const effectiveEntries: TargetEntry[] = useMemo(() => {
     if (mode === 'single') {
       return singleTarget.trim() === '' ? [] : [createTargetEntry(singleTarget)];
@@ -159,14 +167,9 @@ export function AssessmentCreationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submittable.length === 0) return;
-
     setLoading(true);
     setError(null);
 
-    // Both payloads are newline-terminated. The backend decides whether
-    // `targets_file` is a path or inline content via `_is_file_content()`, so a
-    // bare `example.com` with no trailing newline would be read as a
-    // filesystem path and fail. Terminating guarantees "content".
     const targetsContent = buildTargetsContent(effectiveEntries);
     const scopePatternsToSend =
       scopePatterns.length > 0 ? scopePatterns : submittable.map((t) => t.normalized);
@@ -180,29 +183,21 @@ export function AssessmentCreationForm({
         profile,
       });
 
-      // Create only registers the assessment; execution is a separate call.
-      // Both go through the same AssessmentService the CLI uses.
       try {
         await api.startAssessment(created.assessment_id);
       } catch (startErr: any) {
-        // Surface the partial outcome rather than pretending all is well.
         setLoading(false);
-        // Distinguish a server-reported failure from a transport-level one.
-        // A network/timeout abort has no `response`, and collapsing that case
-        // into "unknown error" hid the fact that the run may well have
-        // continued server-side.
         const detail = startErr?.response?.data?.detail;
         const reason = detail
           ? String(detail)
           : startErr?.code === 'ECONNABORTED'
-            ? 'the request timed out before the server responded (the run may still be in progress)'
+            ? 'the request timed out (the run may still be in progress)'
             : startErr?.message
               ? `no response from server (${startErr.message})`
               : 'unknown error';
         setError(
           `Assessment ${created.assessment_id} was created but could not be started: ` +
-            `${reason}. ` +
-            'Open it from the dashboard and retry execution.'
+            `${reason}. Open it from the dashboard and retry.`
         );
         return;
       }
@@ -221,64 +216,70 @@ export function AssessmentCreationForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">New Assessment</h2>
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Heading */}
+      <div>
+        <h2 className="text-[22px] font-medium text-ink">New Assessment</h2>
+        <p className="text-[14px] text-graphite mt-1">
+          Configure your scan target and start a security assessment pipeline.
+        </p>
+      </div>
 
+      {/* Error banner */}
       {error && (
-        <div className="px-4 py-3 bg-red-600/20 border border-red-600/50 rounded-lg text-red-400">
+        <div
+          className="px-4 py-3 rounded-card text-[14px]"
+          style={{ background: '#fdf3f3', border: '1px solid #f5c6c6', color: '#c0392b' }}
+        >
           {error}
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-6">
+        {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-cyborg-muted mb-1">
-            Assessment Name
-          </label>
+          <FieldLabel>Assessment Name</FieldLabel>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
             placeholder="My Security Assessment"
-            className="w-full px-4 py-2 bg-cyborg-card border border-cyborg-border rounded-lg
-                       text-white placeholder-cyborg-muted focus:ring-2 focus:ring-cyborg-accent
-                       focus:border-transparent transition-colors"
+            className="input-glow w-full px-4 py-2.5 rounded-input text-[16px] text-ink
+                       placeholder-graphite outline-none"
+            style={{ background: '#faf8f5' }}
           />
         </div>
 
-        {/* Mode toggle */}
+        {/* Mode chips */}
         <div>
-          <span className="block text-sm font-medium text-cyborg-muted mb-1">Targets</span>
-          <div className="inline-flex rounded-lg overflow-hidden border border-cyborg-border">
-            {(
-              [
-                ['single', 'Single Target'],
-                ['multiple', 'Multiple Targets'],
-              ] as [Mode, string][]
-            ).map(([value, label]) => (
+          <FieldLabel>Target Mode</FieldLabel>
+          <div className="flex gap-2 flex-wrap">
+            {(['single', 'multiple'] as Mode[]).map((m) => (
               <button
-                key={value}
+                key={m}
                 type="button"
-                onClick={() => setMode(value)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  mode === value
-                    ? 'bg-cyborg-accent text-cyborg-dark'
-                    : 'bg-cyborg-card text-cyborg-muted hover:text-white'
-                }`}
+                onClick={() => setMode(m)}
+                className="px-4 py-1.5 rounded-chip text-[14px] font-normal transition-colors border"
+                style={{
+                  background: mode === m ? '#016a71' : 'transparent',
+                  color: mode === m ? '#fff' : '#27251e',
+                  borderColor: mode === m ? '#016a71' : '#d1d1cd',
+                }}
               >
-                {label}
+                {m === 'single' ? 'Single Target' : 'Multiple Targets'}
               </button>
             ))}
           </div>
         </div>
 
+        {/* Target input */}
         {mode === 'single' ? (
           <TargetInput value={singleTarget} onChange={setSingleTarget} />
         ) : (
           <div className="space-y-2">
             <FileInput
-              label="Drop a targets .txt file here"
+              label="Drop a targets .txt file here, or click to browse"
               fieldLabel="Choose targets file"
               acceptedTypes={['.txt']}
               fileName={targetsFileName}
@@ -286,23 +287,20 @@ export function AssessmentCreationForm({
               onDrop={handleTargetsFile}
             />
             {entries.length > 0 && (
-              <p className="text-sm text-cyborg-muted">
-                Targets detected: <span className="text-white font-medium">{entries.length}</span>
+              <p className="text-[13px] text-graphite">
+                Targets detected:{' '}
+                <span className="font-medium text-ink">{entries.length}</span>
               </p>
             )}
           </div>
         )}
 
-        {/* Target preview. TargetInput renders its own compact preview card in
-            single mode (entered -> normalized -> status -> changes), so the
-            table is only needed for the multi-target review step. */}
+        {/* Target preview table (multiple mode) */}
         {mode === 'multiple' && effectiveEntries.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-cyborg-muted mb-1">
-              Review targets
-            </label>
+            <FieldLabel>Review Targets</FieldLabel>
             <TargetPreview entries={effectiveEntries} />
-            {entries.some((e) => e.status === 'VALID') && (
+            {entries.some((e) => e.status === 'VALID' || e.status === 'INVALID') && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {entries
                   .map((e, i) => ({ e, i }))
@@ -312,9 +310,9 @@ export function AssessmentCreationForm({
                       key={e.id}
                       type="button"
                       onClick={() => setEntries((prev) => prev.filter((_, idx) => idx !== i))}
-                      className="px-2 py-0.5 bg-cyborg-card border border-cyborg-border
-                                 text-cyborg-muted text-xs rounded hover:border-red-500
-                                 hover:text-red-400 transition-colors"
+                      className="px-2 py-0.5 text-[12px] text-graphite border border-warm-mist
+                                 rounded-btn hover:border-red-400 hover:text-red-500 transition-colors"
+                      style={{ background: '#faf8f5' }}
                     >
                       remove {e.normalized || e.raw}
                     </button>
@@ -326,15 +324,11 @@ export function AssessmentCreationForm({
 
         {/* Scope */}
         <div>
-          <label className="block text-sm font-medium text-cyborg-muted mb-1">
-            Authorized Scope
-          </label>
-          <p className="text-xs text-cyborg-muted/70 mb-2">
+          <FieldLabel>Authorized Scope</FieldLabel>
+          <p className="text-[13px] text-graphite mb-2">
             {scopePatterns.length > 0
               ? `Using ${scopePatterns.length} pattern(s) from ${scopeFileName}.`
-              : `Defaults to the ${submittable.length} target domain(s) above. ` +
-                'Upload a scope file to restrict or extend it. ' +
-                'Only hosts covered by scope are scanned.'}
+              : `Defaults to the ${submittable.length} target domain(s) above. Upload a scope file to restrict or extend.`}
           </p>
           <FileInput
             label="Optional scope .txt file"
@@ -346,40 +340,40 @@ export function AssessmentCreationForm({
           />
         </div>
 
+        {/* Profile */}
         <div>
-          <label className="block text-sm font-medium text-cyborg-muted mb-1">Profile</label>
+          <FieldLabel>Scan Profile</FieldLabel>
           <select
             value={profile}
             onChange={(e) => setProfile(e.target.value as 'standard' | 'quick')}
-            className="w-full px-4 py-2 bg-cyborg-card border border-cyborg-border rounded-lg
-                       text-white focus:ring-2 focus:ring-cyborg-accent focus:border-transparent
-                       transition-colors"
+            className="input-glow w-full px-4 py-2.5 rounded-input text-[14px] text-ink outline-none"
+            style={{ background: '#faf8f5' }}
           >
-            <option value="standard">Standard (Full Assessment)</option>
-            <option value="quick">Quick (Speed Optimized)</option>
+            <option value="standard">Standard — Full Assessment</option>
+            <option value="quick">Quick — Speed Optimized</option>
           </select>
         </div>
       </div>
 
-      <div className="flex space-x-3">
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="flex-1 px-4 py-2 bg-cyborg-accent text-cyborg-dark font-medium rounded-lg
-                     hover:bg-cyborg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed
-                     transition-colors"
-        >
-          {loading
-            ? 'Starting...'
-            : `Start Assessment (${submittable.length} target${submittable.length === 1 ? '' : 's'})`}
-        </button>
-      </div>
-
+      {/* Invalid warning */}
       {hasInvalid && (
-        <p className="text-xs text-amber-400">
+        <p className="text-[12px]" style={{ color: '#c06000' }}>
           Invalid targets will be skipped. Remove them if that is not intended.
         </p>
       )}
+
+      {/* Submit */}
+      <button
+        type="submit"
+        disabled={!canSubmit}
+        className="w-full px-5 py-3 text-[15px] font-medium text-parchment
+                   rounded-input transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ background: '#27251e' }}
+      >
+        {loading
+          ? 'Starting scan…'
+          : `Start Assessment (${submittable.length} target${submittable.length === 1 ? '' : 's'})`}
+      </button>
     </form>
   );
 }

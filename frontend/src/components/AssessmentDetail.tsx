@@ -1,8 +1,10 @@
 /**
- * Assessment Detail View Component
- * 
- * Shows detailed information about a specific assessment including
- * findings, status, and actions.
+ * Assessment Detail View — Perplexity parchment redesign
+ *
+ * Three-section layout:
+ *  1. Page header (name, status pill, back button, action buttons)
+ *  2. Info + progress cards (soft-paper, 16px radius)
+ *  3. Findings section (table → card stack on mobile)
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -14,28 +16,184 @@ import type {
   FindingResponse,
 } from '../lib/models';
 
-// Assessment status badge colors
-const statusColors: Record<string, string> = {
-  CREATED: 'bg-gray-100 text-gray-800',
-  RUNNING: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  FAILED: 'bg-red-100 text-red-800',
-  CANCELLED: 'bg-yellow-100 text-yellow-800',
-  RESUMING: 'bg-purple-100 text-purple-800',
-  AWAITING_VALIDATION: 'bg-orange-100 text-orange-800',
+// ─── Status pill ──────────────────────────────────────────────────────────────
+
+const statusStyles: Record<string, { bg: string; text: string }> = {
+  CREATED:              { bg: '#e8e5e0', text: '#72706b' },
+  RUNNING:              { bg: '#d4edeb', text: '#016a71' },
+  COMPLETED:            { bg: '#d4edeb', text: '#016a71' },
+  FAILED:               { bg: '#fde8e8', text: '#c0392b' },
+  CANCELLED:            { bg: '#fdf3e3', text: '#9a6700' },
+  RESUMING:             { bg: '#ede8f8', text: '#6d4fc9' },
+  AWAITING_VALIDATION:  { bg: '#fff0e0', text: '#c06000' },
 };
+
+function StatusPill({ status }: { status: string }) {
+  const s = statusStyles[status] ?? { bg: '#e8e5e0', text: '#72706b' };
+  return (
+    <span
+      className="inline-flex items-center px-2.5 py-0.5 rounded-chip text-[11px] font-medium leading-none"
+      style={{ background: s.bg, color: s.text }}
+    >
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+// ─── Severity pill ─────────────────────────────────────────────────────────────
+
+const severityStyles: Record<string, { bg: string; text: string }> = {
+  critical: { bg: '#fde8e8', text: '#c0392b' },
+  high:     { bg: '#fff0e0', text: '#c06000' },
+  medium:   { bg: '#fff8d6', text: '#9a6700' },
+  low:      { bg: '#d4edeb', text: '#016a71' },
+  info:     { bg: '#e8e5e0', text: '#72706b' },
+};
+
+function SeverityPill({ severity }: { severity: string }) {
+  const s = severityStyles[severity.toLowerCase()] ?? { bg: '#e8e5e0', text: '#72706b' };
+  return (
+    <span
+      className="inline-flex items-center px-2.5 py-0.5 rounded-chip text-[11px] font-medium uppercase leading-none"
+      style={{ background: s.bg, color: s.text }}
+    >
+      {severity}
+    </span>
+  );
+}
+
+// ─── Validation pill ──────────────────────────────────────────────────────────
+
+const valStyles: Record<string, { bg: string; text: string }> = {
+  DISCOVERED:       { bg: '#e8e5e0', text: '#72706b' },
+  NEEDS_VALIDATION: { bg: '#fff0e0', text: '#c06000' },
+  VALIDATING:       { bg: '#e0e8ff', text: '#2d5be3' },
+  VALIDATED:        { bg: '#d4edeb', text: '#016a71' },
+  FALSE_POSITIVE:   { bg: '#fde8e8', text: '#c0392b' },
+  REPORTABLE:       { bg: '#d4edeb', text: '#016a71' },
+};
+
+function ValidationPill({ status }: { status: string }) {
+  const s = valStyles[status] ?? { bg: '#e8e5e0', text: '#72706b' };
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-chip text-[11px] font-medium leading-none"
+      style={{ background: s.bg, color: s.text }}
+    >
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+
+function ProgressBar({ pct, thin = false }: { pct: number; thin?: boolean }) {
+  return (
+    <div
+      className={`w-full ${thin ? 'h-1' : 'h-2'} rounded-full overflow-hidden`}
+      style={{ background: '#e8e5e0' }}
+    >
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{
+          width: `${Math.min(100, Math.max(0, pct))}%`,
+          background: '#016a71',
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── Info card ────────────────────────────────────────────────────────────────
+
+function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="rounded-card border border-warm-mist shadow-subtle p-4"
+      style={{ background: '#fdfbfa' }}
+    >
+      <h3 className="text-[13px] font-medium text-graphite uppercase tracking-wide mb-3">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 text-[14px]">
+      <span className="text-graphite w-28 flex-shrink-0">{label}</span>
+      <span className="text-ink">{value}</span>
+    </div>
+  );
+}
+
+// ─── Action button ────────────────────────────────────────────────────────────
+
+function ActionBtn({
+  onClick,
+  disabled,
+  variant = 'ghost',
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: 'ghost' | 'ink' | 'danger';
+  children: React.ReactNode;
+}) {
+  const styles: Record<string, React.CSSProperties> = {
+    ghost: {
+      background: 'transparent',
+      color: '#72706b',
+      border: '1px solid #d1d1cd',
+    },
+    ink: {
+      background: '#27251e',
+      color: '#faf8f5',
+      border: 'none',
+    },
+    danger: {
+      background: 'transparent',
+      color: '#c0392b',
+      border: '1px solid #f5c6c6',
+    },
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="px-4 py-2 text-[13px] font-medium rounded-btn transition-opacity
+                 disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-80"
+      style={styles[variant]}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── Export state ─────────────────────────────────────────────────────────────
+
+type ExportPhase = 'idle' | 'starting' | 'building' | 'done' | 'error';
+interface ExportState { phase: ExportPhase; exportId?: string; message?: string; }
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+function getSeverityBreakdown(findings: FindingResponse[]): string {
+  if (findings.length === 0) return '—';
+  const counts: Record<string, number> = {};
+  findings.forEach((f) => { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  return Object.entries(counts)
+    .map(([sev, cnt]) => `${sev}: ${cnt}`)
+    .join(' · ');
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 interface AssessmentDetailProps {
   assessmentId: string;
   onBack?: () => void;
-}
-
-type ExportPhase = 'idle' | 'starting' | 'building' | 'done' | 'error';
-
-interface ExportState {
-  phase: ExportPhase;
-  exportId?: string;
-  message?: string;
 }
 
 export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps) {
@@ -62,7 +220,6 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
       setStatus(statusData);
       setFindings(findingsData);
     } catch (err: any) {
-      console.error('Failed to load assessment details:', err);
       setError(err.response?.data?.detail || 'Failed to load assessment details');
     } finally {
       setLoading(false);
@@ -71,91 +228,49 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
 
   useEffect(() => {
     fetchAssessment();
-
-    // Set up WebSocket for real-time updates
     const wsManager = new WebSocketManager(assessmentId);
     wsManager.onProgressUpdate((data) => {
-      if (status) {
-        setStatus((prev) => prev ? { ...prev, progress: data.progress } : prev);
-      }
+      if (status) setStatus((prev) => prev ? { ...prev, progress: data.progress } : prev);
     });
     wsManager.onFindingUpdate((data: any) => {
       if (data.action === 'created') {
         setFindings((prev) => [...prev, data.finding]);
-      } else if (data.action === 'updated' || data.action === 'validated' || data.action === 'rejected') {
+      } else if (['updated', 'validated', 'rejected'].includes(data.action)) {
         setFindings((prev) =>
-          prev.map((f) =>
-            f.finding_id === data.finding.finding_id ? data.finding : f
-          )
+          prev.map((f) => f.finding_id === data.finding.finding_id ? data.finding : f)
         );
       }
     });
     wsManager.connect();
-
-    // Auto-refresh every 30 seconds for non-WebSocket data
     const interval = setInterval(fetchAssessment, 30000);
-
-    // Cleanup on unmount
-    return () => {
-      wsManager.disconnect();
-      clearInterval(interval);
-    };
+    return () => { wsManager.disconnect(); clearInterval(interval); };
   }, [assessmentId, fetchAssessment]);
 
   const handleStartAssessment = async () => {
-    try {
-      await api.startAssessment(assessmentId);
-      fetchAssessment();
-    } catch (err) {
-      console.error('Failed to start assessment:', err);
-      setError('Failed to start assessment');
-    }
+    try { await api.startAssessment(assessmentId); fetchAssessment(); }
+    catch { setError('Failed to start assessment'); }
   };
 
   const handleResumeAssessment = async () => {
-    try {
-      await api.resumeAssessment(assessmentId);
-      fetchAssessment();
-    } catch (err) {
-      console.error('Failed to resume assessment:', err);
-      setError('Failed to resume assessment');
-    }
+    try { await api.resumeAssessment(assessmentId); fetchAssessment(); }
+    catch { setError('Failed to resume assessment'); }
   };
 
-  const handleBack = () => {
-    if (onBack) onBack();
-    else window.location.href = '/';
-  };
+  const handleBack = () => { if (onBack) onBack(); else window.location.href = '/'; };
 
   const handleCancelAssessment = async () => {
-    try {
-      await api.cancelAssessment(assessmentId);
-      if (onBack) onBack();
-      else window.location.href = '/';
-    } catch (err) {
-      console.error('Failed to cancel assessment:', err);
-      setError('Failed to cancel assessment');
-    }
+    try { await api.cancelAssessment(assessmentId); if (onBack) onBack(); else window.location.href = '/'; }
+    catch { setError('Failed to cancel assessment'); }
   };
 
   const handleValidateFinding = async (findingId: string, notes?: string) => {
-    try {
-      await api.validateFinding(assessmentId, findingId, notes);
-      fetchAssessment();
-    } catch (err) {
-      console.error('Failed to validate finding:', err);
-      setError('Failed to validate finding');
-    }
+    try { await api.validateFinding(assessmentId, findingId, notes); fetchAssessment(); }
+    catch { setError('Failed to validate finding'); }
   };
 
   const handleRejectFinding = async (findingId: string, notes?: string) => {
-    try {
-      await api.rejectFinding(assessmentId, findingId, notes);
-      fetchAssessment();
-    } catch (err) {
-      console.error('Failed to reject finding:', err);
-      setError('Failed to reject finding');
-    }
+    try { await api.rejectFinding(assessmentId, findingId, notes); fetchAssessment(); }
+    catch { setError('Failed to reject finding'); }
   };
 
   const handleExportAssessment = async () => {
@@ -164,28 +279,20 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
     try {
       const exportData = await api.createExport(assessmentId);
       setExportState({ phase: 'building', exportId: exportData.export_id });
-
-      // Poll the backend until the archive is really built. The export runs
-      // server-side, so this reflects actual state rather than assuming success.
       const deadline = Date.now() + 5 * 60 * 1000;
-      let status = await api.getExportStatus(assessmentId, exportData.export_id);
-      while (status.status !== 'completed' && status.status !== 'failed') {
+      let s = await api.getExportStatus(assessmentId, exportData.export_id);
+      while (s.status !== 'completed' && s.status !== 'failed') {
         if (Date.now() > deadline) {
           setExportState({ phase: 'error', message: 'Export timed out after 5 minutes' });
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        status = await api.getExportStatus(assessmentId, exportData.export_id);
+        await new Promise((r) => setTimeout(r, 1000));
+        s = await api.getExportStatus(assessmentId, exportData.export_id);
       }
-
-      if (status.status === 'failed') {
-        setExportState({
-          phase: 'error',
-          message: status.error || 'Export failed on the server',
-        });
+      if (s.status === 'failed') {
+        setExportState({ phase: 'error', message: s.error || 'Export failed on the server' });
         return;
       }
-
       const blob = await api.downloadExport(assessmentId, exportData.export_id);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -196,409 +303,377 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       setExportState({ phase: 'done' });
-    } catch (err) {
-      console.error('Failed to create export:', err);
+    } catch {
       setExportState({ phase: 'error', message: 'Failed to create export' });
     }
   };
 
+  // ─── Loading ───────────────────────────────────────────────────────────────
+
   if (loading && !assessment) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-cyborg-muted">Loading assessment details...</div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-28 rounded-card border border-warm-mist animate-pulse"
+               style={{ background: '#fdfbfa' }} />
+        ))}
       </div>
     );
   }
 
-  if (error) {
+  if (error && !assessment) {
     return (
-      <div className="px-4 py-3 bg-red-600/20 border border-red-600/50 rounded-lg text-red-400 mb-6">
-        {error}
-        <button
-          onClick={fetchAssessment}
-          className="ml-4 underline"
-        >
+      <div className="rounded-card border p-4 flex items-center justify-between"
+           style={{ background: '#fdf3f3', borderColor: '#f5c6c6' }}>
+        <p className="text-[14px]" style={{ color: '#c0392b' }}>{error}</p>
+        <button onClick={fetchAssessment}
+                className="px-3 py-1 text-[13px] text-graphite border border-warm-mist rounded-btn hover:text-ink transition-colors">
           Retry
         </button>
       </div>
     );
   }
 
+  const pct = status?.progress?.completion_percentage ?? 0;
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold text-white">
-            {assessment?.name || 'Assessment Details'}
-          </h1>
-          <p className="text-cyborg-muted mt-1">
-            ID: {assessment?.assessment_id}
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-          {assessment && (
-            <>
-              <span
-                className={`px-2 py-1 text-xs font-medium rounded-full ${
-                  statusColors[assessment.status] || 'bg-gray-100 text-gray-800'
-                }`}
-              >
-                {assessment.status}
-              </span>
-              <button
-                onClick={handleBack}
-                className="px-3 py-1 text-sm bg-cyborg-card border border-cyborg-border text-cyborg-muted 
-                           rounded-lg hover:bg-cyborg-card/50 transition-colors"
-              >
-                Back
-              </button>
-            </>
-          )}
-        </div>
-      </div>
 
-      {/* Live Execution Status */}
-      <LiveStatusPanel status={live} onRefresh={fetchAssessment} />
-
-      {/* Assessment Info */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-cyborg-card rounded-lg border border-cyborg-border p-6">
-        <div>
-          <h2 className="text-lg font-semibold text-white mb-3">Assessment Info</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Created:</span>
-              <span className="text-white">
-                {assessment ? new Date(assessment.created_at).toLocaleString() : '-'}
-              </span>
-            </div>
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Profile:</span>
-              <span className="text-white">{assessment?.profile}</span>
-            </div>
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Target:</span>
-              <span className="text-white">
-                {assessment ? assessment.artifact_root.split('/').pop() || 'Unknown' : '-'}
-              </span>
-            </div>
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Status Updated:</span>
-              <span className="text-white">
-                {status ? new Date(status.updated_at).toLocaleString() : '-'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold text-white mb-3">Progress</h2>
-          <div className="space-y-4">
-            <div className="mb-2">
-              <label className="block text-sm font-medium text-cyborg-muted mb-1">
-                Overall Completion
-              </label>
-              <div className="w-full h-2 bg-cyborg-dark rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-cyborg-accent rounded-full transition-all"
-                  style={{
-                    width: `${status?.progress?.completion_percentage || 0}%`,
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-sm mt-1">
-                <span className="text-cyborg-muted">
-                  {status?.progress?.completion_percentage || 0}%
-                </span>
-                <span className="text-white">
-                  {status?.progress?.completion_percentage || 0}%
-                </span>
-              </div>
-            </div>
-
-            {status?.progress?.targets?.length && (
-              <div className="mt-4">
-                <p className="text-sm font-medium text-cyborg-muted mb-2">
-                  Target Progress
-                </p>
-                <div className="space-y-2">
-                  {status.progress.targets.map((target: any) => (
-                    <div key={target.target_id} className="space-y-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-cyborg-muted">{target.domain}</span>
-                        <span className="text-white">{target.status}</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-cyborg-dark rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-cyborg-accent rounded-full transition-all"
-                          style={{
-                            width: `${target.completion_percentage || 0}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="text-xs text-cyborg-muted">
-                        {target.completion_percentage?.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold text-white mb-3">Statistics</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Total Findings:</span>
-              <span className="text-white">{findings.length}</span>
-            </div>
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Pending Validation:</span>
-              <span className="text-white">
-                {status?.pending_validation_count || 0}
-              </span>
-            </div>
-            <div className="flex">
-              <span className="w-24 text-cyborg-muted">Severity Breakdown:</span>
-              <span className="text-white">
-                {/* Calculate severity breakdown from findings */}
-                {getSeverityBreakdown(findings)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      {assessment && (
-        <div className="flex items-center justify-between space-x-3">
-          <div className="flex-1">
-            <button
-              onClick={handleStartAssessment}
-              disabled={assessment.status !== 'CREATED'}
-              className="w-full px-4 py-2 bg-blue-600 text-white font-medium rounded-lg 
-                         hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed 
-                         transition-colors"
-            >
-              Start Assessment
-            </button>
-          </div>
-          <div className="flex-1">
-            <button
-              onClick={handleResumeAssessment}
-              disabled={!['FAILED', 'AWAITING_VALIDATION'].includes(assessment.status)}
-              className="w-full px-4 py-2 bg-purple-600 text-white font-medium rounded-lg 
-                         hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed 
-                         transition-colors"
-            >
-              Resume
-            </button>
-          </div>
-          <div className="flex-1">
-            <button
-              onClick={handleCancelAssessment}
-              disabled={!['RUNNING', 'RESUMING'].includes(assessment.status)}
-              className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg 
-                         hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed 
-                         transition-colors"
-            >
-              Cancel Assessment
-            </button>
-          </div>
-          <div className="flex-1">
-            <button
-              onClick={handleExportAssessment}
-              disabled={exportState.phase === 'starting' || exportState.phase === 'building'}
-              className="w-full px-4 py-2 bg-green-600 text-white font-medium rounded-lg 
-                         hover:bg-green-700 transition-colors
-                         disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {exportState.phase === 'starting' && 'Starting export...'}
-              {exportState.phase === 'building' && 'Building archive...'}
-              {exportState.phase === 'done' && 'Downloaded — export again'}
-              {exportState.phase === 'error' && 'Retry export'}
-              {(exportState.phase === 'idle') && 'Export Results'}
-            </button>
-            {exportState.phase === 'error' && exportState.message && (
-              <p className="mt-2 text-xs text-red-400">{exportState.message}</p>
-            )}
-          </div>
+      {/* Error banner (non-blocking) */}
+      {error && (
+        <div className="rounded-card border p-3 text-[13px]"
+             style={{ background: '#fdf3f3', borderColor: '#f5c6c6', color: '#c0392b' }}>
+          {error}
+          <button onClick={fetchAssessment} className="ml-3 underline text-[13px]">Retry</button>
         </div>
       )}
 
-      {/* Findings Section */}
-      <div>
-        <h2 className="text-2xl font-bold text-white mb-4">
-          Findings ({findings.length})
-          {status?.pending_validation_count && status.pending_validation_count > 0 && (
-            <span className="ml-2 px-2 py-0.5 bg-orange-600/20 text-orange-400 rounded text-xs">
-              {status.pending_validation_count} pending validation
-            </span>
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-[22px] font-medium text-ink">
+              {assessment?.name || 'Assessment Details'}
+            </h1>
+            {assessment && <StatusPill status={assessment.status} />}
+          </div>
+          <p className="text-[13px] text-graphite mt-1 font-mono">{assessmentId}</p>
+        </div>
+        <button
+          onClick={handleBack}
+          className="px-3 py-1.5 text-[13px] text-graphite border border-warm-mist
+                     rounded-btn hover:text-ink hover:border-ash transition-colors flex-shrink-0"
+        >
+          ← Back
+        </button>
+      </div>
+
+      {/* ── Live Status Panel ── */}
+      <section
+        className="rounded-card border border-warm-mist shadow-subtle p-4"
+        style={{ background: '#fdfbfa' }}
+      >
+        <p className="text-[12px] font-medium text-graphite uppercase tracking-wide mb-3">
+          Live Execution
+        </p>
+        <LiveStatusPanel status={live} onRefresh={fetchAssessment} />
+      </section>
+
+      {/* ── Info Cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <InfoCard title="Assessment Info">
+          <div className="space-y-2">
+            <InfoRow
+              label="Created"
+              value={assessment ? new Date(assessment.created_at).toLocaleString() : '—'}
+            />
+            <InfoRow label="Profile" value={<span className="capitalize">{assessment?.profile}</span>} />
+            <InfoRow
+              label="Root"
+              value={assessment?.artifact_root.split('/').pop() || '—'}
+            />
+          </div>
+        </InfoCard>
+
+        <InfoCard title="Progress">
+          <div className="space-y-3">
+            <div>
+              <div className="flex justify-between text-[13px] text-graphite mb-1">
+                <span>Overall</span>
+                <span className="text-ink font-medium">{pct.toFixed(1)}%</span>
+              </div>
+              <ProgressBar pct={pct} />
+            </div>
+            {(status?.progress?.targets?.length ?? 0) > 0 && (
+              <div className="space-y-2 mt-2">
+                {(status!.progress!.targets as any[]).map((t) => (
+                  <div key={t.target_id}>
+                    <div className="flex justify-between text-[12px] text-graphite mb-0.5">
+                      <span className="truncate max-w-[120px]">{t.domain}</span>
+                      <StatusPill status={t.status} />
+                    </div>
+                    <ProgressBar pct={t.completion_percentage ?? 0} thin />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </InfoCard>
+
+        <InfoCard title="Statistics">
+          <div className="space-y-2">
+            <InfoRow label="Findings" value={findings.length} />
+            <InfoRow label="Pending" value={status?.pending_validation_count ?? 0} />
+            <InfoRow label="Severity" value={getSeverityBreakdown(findings)} />
+            <InfoRow
+              label="Updated"
+              value={status ? new Date(status.updated_at).toLocaleString() : '—'}
+            />
+          </div>
+        </InfoCard>
+      </div>
+
+      {/* ── Actions ── */}
+      {assessment && (
+        <div className="flex flex-wrap gap-2">
+          <ActionBtn
+            onClick={handleStartAssessment}
+            disabled={assessment.status !== 'CREATED'}
+            variant="ink"
+          >
+            Start
+          </ActionBtn>
+          <ActionBtn
+            onClick={handleResumeAssessment}
+            disabled={!['FAILED', 'AWAITING_VALIDATION'].includes(assessment.status)}
+          >
+            Resume
+          </ActionBtn>
+          <ActionBtn
+            onClick={handleCancelAssessment}
+            disabled={!['RUNNING', 'RESUMING'].includes(assessment.status)}
+            variant="danger"
+          >
+            Cancel
+          </ActionBtn>
+          <ActionBtn
+            onClick={handleExportAssessment}
+            disabled={exportState.phase === 'starting' || exportState.phase === 'building'}
+          >
+            {exportState.phase === 'starting' && 'Starting export…'}
+            {exportState.phase === 'building' && 'Building archive…'}
+            {exportState.phase === 'done'     && 'Downloaded ✓'}
+            {exportState.phase === 'error'    && 'Retry Export'}
+            {exportState.phase === 'idle'     && 'Export ZIP'}
+          </ActionBtn>
+          {exportState.phase === 'error' && exportState.message && (
+            <p className="w-full text-[12px]" style={{ color: '#c0392b' }}>
+              {exportState.message}
+            </p>
           )}
-        </h2>
+        </div>
+      )}
+
+      {/* ── Findings ── */}
+      <section>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[18px] font-medium text-ink">
+              Findings
+            </h2>
+            <span
+              className="px-2 py-0.5 rounded-chip text-[12px] font-medium"
+              style={{ background: '#e8e5e0', color: '#72706b' }}
+            >
+              {findings.length}
+            </span>
+            {(status?.pending_validation_count ?? 0) > 0 && (
+              <span
+                className="px-2 py-0.5 rounded-chip text-[11px] font-medium"
+                style={{ background: '#fff0e0', color: '#c06000' }}
+              >
+                {status!.pending_validation_count} pending
+              </span>
+            )}
+          </div>
+          {findings.length > 0 && (
+            <button
+              onClick={async () => {
+                try {
+                  const data = await api.getPendingValidation(assessmentId);
+                  setPendingInfo(data.pending_count);
+                  setPendingError(null);
+                } catch {
+                  setPendingError('Failed to load pending validation');
+                }
+              }}
+              className="px-3 py-1.5 text-[13px] text-graphite border border-warm-mist
+                         rounded-btn hover:text-ink hover:border-ash transition-colors"
+            >
+              Check Pending
+            </button>
+          )}
+        </div>
+
+        {pendingError && <p className="mb-3 text-[13px]" style={{ color: '#c0392b' }}>{pendingError}</p>}
+        {pendingInfo !== null && !pendingError && (
+          <div
+            className="mb-4 px-4 py-2.5 rounded-card text-[14px]"
+            style={{
+              background: pendingInfo === 0 ? '#f0faf8' : '#fff8ee',
+              border: pendingInfo === 0 ? '1px solid #a8d8d2' : '1px solid #f5d5a0',
+              color: pendingInfo === 0 ? '#016a71' : '#9a6700',
+            }}
+          >
+            {pendingInfo === 0
+              ? 'No findings are awaiting a validation decision.'
+              : `${pendingInfo} finding${pendingInfo === 1 ? '' : 's'} pending validation — use Confirm / Reject below.`}
+          </div>
+        )}
 
         {findings.length === 0 ? (
-          <div className="text-center py-12 bg-cyborg-card rounded-lg border border-cyborg-border">
-            <div className="text-cyborg-muted">No findings discovered yet</div>
-            {assessment?.status === 'RUNNING' || assessment?.status === 'RESUMING' ? (
-              <p className="mt-2 text-cyborg-muted text-sm">
-                Scan is still in progress...
-              </p>
-            ) : (
-              <p className="mt-2 text-cyborg-muted text-sm">
-                The assessment has completed but no findings were discovered.
-              </p>
+          <div
+            className="rounded-card border border-warm-mist shadow-subtle text-center py-12"
+            style={{ background: '#fdfbfa' }}
+          >
+            <p className="text-[14px] text-graphite">No findings discovered yet</p>
+            {(assessment?.status === 'RUNNING' || assessment?.status === 'RESUMING') && (
+              <p className="mt-1 text-[13px] text-ash">Scan is still in progress…</p>
             )}
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={async () => {
-                  try {
-                    const data = await api.getPendingValidation(assessmentId);
-                    setPendingInfo(data.pending_count);
-                  } catch (err) {
-                    console.error('Failed to load pending validation:', err);
-                    setPendingInfo(null);
-                    setPendingError('Failed to load pending validation');
-                  }
-                }}
-                className="px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
-              >
-                View Pending Validation
-              </button>
-            </div>
-            {pendingError && (
-              <p className="mb-3 text-sm text-red-400">{pendingError}</p>
-            )}
-            {pendingInfo !== null && !pendingError && (
-              <div className="mb-3 px-3 py-2 bg-yellow-600/10 border border-yellow-600/40 rounded text-sm text-yellow-200">
-                {pendingInfo === 0
-                  ? 'No findings are awaiting a validation decision.'
-                  : `There are ${pendingInfo} finding${pendingInfo === 1 ? '' : 's'} pending validation. ` +
-                    'Use the Confirm / Reject action on each finding below.'}
-              </div>
-            )}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+          <>
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto rounded-card border border-warm-mist shadow-subtle"
+                 style={{ background: '#fdfbfa' }}>
+              <table className="w-full text-left border-collapse text-[13px]">
                 <thead>
-                  <tr className="bg-cyborg-dark">
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Severity
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Title
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Target
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Source
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Status
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-cyborg-muted">
-                      Actions
-                    </th>
+                  <tr style={{ borderBottom: '1px solid #d1d1cd' }}>
+                    {['Severity', 'Title', 'Target', 'Tool', 'Validation', 'Actions'].map((h) => (
+                      <th key={h}
+                          className="px-4 py-3 text-[12px] font-medium text-graphite uppercase tracking-wide">
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-cyborg-border/50">
+                <tbody>
                   {findings.map((finding) => (
-                    <tr key={finding.finding_id} className="hover:bg-cyborg-card/50 transition-colors">
-                      <td className="p-3 text-sm font-medium">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${
-                            finding.severity === 'critical'
-                              ? 'bg-red-600/20 text-red-400'
-                              : finding.severity === 'high'
-                              ? 'bg-orange-600/20 text-orange-400'
-                              : finding.severity === 'medium'
-                              ? 'bg-yellow-600/20 text-yellow-400'
-                              : finding.severity === 'low'
-                              ? 'bg-green-600/20 text-green-400'
-                              : 'bg-blue-600/20 text-blue-400'
-                          }`}
-                        >
-                          {finding.severity.toUpperCase()}
+                    <tr
+                      key={finding.finding_id}
+                      className="transition-colors"
+                      style={{ borderBottom: '1px solid #e8e5e0' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f5f2ed')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                    >
+                      <td className="px-4 py-3">
+                        <SeverityPill severity={finding.severity} />
+                      </td>
+                      <td className="px-4 py-3 max-w-[180px]">
+                        <span className="truncate block text-ink" title={finding.title}>
+                          {finding.title}
                         </span>
                       </td>
-                      <td className="p-3 text-sm max-w-[200px] truncate">{finding.title}</td>
-                      <td className="p-3 text-sm">{finding.target_domain}</td>
-                      <td className="p-3 text-sm">{finding.source_tool}</td>
-                      <td className="p-3 text-sm">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full ${
-                            finding.validation_status === 'DISCOVERED'
-                              ? 'bg-gray-600/20 text-gray-400'
-                              : finding.validation_status === 'NEEDS_VALIDATION'
-                              ? 'bg-yellow-600/20 text-yellow-400'
-                              : finding.validation_status === 'VALIDATING'
-                              ? 'bg-blue-600/20 text-blue-400'
-                              : finding.validation_status === 'VALIDATED'
-                              ? 'bg-green-600/20 text-green-400'
-                              : finding.validation_status === 'FALSE_POSITIVE'
-                              ? 'bg-red-600/20 text-red-400'
-                              : 'bg-purple-600/20 text-purple-400'
-                          }`}
-                        >
-                          {finding.validation_status.replace('_', ' ')}
-                        </span>
+                      <td className="px-4 py-3 text-graphite">{finding.target_domain}</td>
+                      <td className="px-4 py-3 text-graphite font-mono text-[12px]">{finding.source_tool}</td>
+                      <td className="px-4 py-3">
+                        <ValidationPill status={finding.validation_status} />
                       </td>
-                      <td className="p-3 space-x-2">
-                        {finding.validation_status === 'VALIDATING' && (
-                          <>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1.5">
+                          {finding.validation_status === 'VALIDATING' && (
+                            <>
+                              <button
+                                onClick={() => handleValidateFinding(finding.finding_id)}
+                                className="px-2 py-0.5 text-[11px] rounded-btn font-medium transition-opacity hover:opacity-75"
+                                style={{ background: '#016a71', color: '#fff' }}
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => handleRejectFinding(finding.finding_id)}
+                                className="px-2 py-0.5 text-[11px] rounded-btn font-medium transition-opacity hover:opacity-75"
+                                style={{ background: '#fde8e8', color: '#c0392b', border: '1px solid #f5c6c6' }}
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          {finding.validation_status === 'NEEDS_VALIDATION' && (
                             <button
-                              onClick={() => handleValidateFinding(finding.finding_id)}
-                              className="text-xs bg-green-600 text-white px-2 py-0.5 rounded hover:bg-green-700 transition-colors"
+                              onClick={() => {
+                                const notes = prompt('Add validation notes (optional):');
+                                handleValidateFinding(finding.finding_id, notes ?? undefined);
+                              }}
+                              className="px-2 py-0.5 text-[11px] rounded-btn font-medium transition-opacity hover:opacity-75"
+                              style={{ background: '#e0e8ff', color: '#2d5be3', border: '1px solid #c0ccf8' }}
                             >
-                              Confirm
+                              Validate
                             </button>
-                            <button
-                              onClick={() => handleRejectFinding(finding.finding_id)}
-                              className="text-xs ml-1 bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700 transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {finding.validation_status === 'NEEDS_VALIDATION' && (
-                          <button
-                            onClick={() => {
-                              const notes = prompt('Add validation notes (optional):');
-                              handleValidateFinding(finding.finding_id, notes ?? undefined);
-                            }}
-                            className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700 transition-colors"
-                          >
-                            Validate
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+
+            {/* Mobile card stack */}
+            <div className="sm:hidden space-y-3">
+              {findings.map((finding) => (
+                <div
+                  key={finding.finding_id}
+                  className="rounded-card border border-warm-mist shadow-subtle p-4 space-y-2"
+                  style={{ background: '#fdfbfa' }}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <SeverityPill severity={finding.severity} />
+                    <ValidationPill status={finding.validation_status} />
+                  </div>
+                  <p className="text-[14px] text-ink font-medium">{finding.title}</p>
+                  <div className="flex gap-4 text-[12px] text-graphite">
+                    <span>{finding.target_domain}</span>
+                    <span className="font-mono">{finding.source_tool}</span>
+                  </div>
+                  {finding.validation_status === 'VALIDATING' && (
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => handleValidateFinding(finding.finding_id)}
+                        className="flex-1 py-1.5 text-[13px] rounded-btn font-medium"
+                        style={{ background: '#016a71', color: '#fff' }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => handleRejectFinding(finding.finding_id)}
+                        className="flex-1 py-1.5 text-[13px] rounded-btn font-medium"
+                        style={{ background: '#fde8e8', color: '#c0392b', border: '1px solid #f5c6c6' }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                  {finding.validation_status === 'NEEDS_VALIDATION' && (
+                    <button
+                      onClick={() => {
+                        const notes = prompt('Add validation notes (optional):');
+                        handleValidateFinding(finding.finding_id, notes ?? undefined);
+                      }}
+                      className="w-full py-1.5 text-[13px] rounded-btn font-medium"
+                      style={{ background: '#e0e8ff', color: '#2d5be3' }}
+                    >
+                      Validate
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
-      </div>
+      </section>
     </div>
   );
-}
-
-// Helper function to get severity breakdown
-function getSeverityBreakdown(findings: any[]): string {
-  if (findings.length === 0) return 'None';
-
-  const counts: Record<string, number> = {};
-  findings.forEach((f) => {
-    counts[f.severity] = (counts[f.severity] || 0) + 1;
-  });
-
-  return Object.entries(counts)
-    .map(([severity, count]) => `${severity}: ${count}`)
-    .join(', ');
 }
