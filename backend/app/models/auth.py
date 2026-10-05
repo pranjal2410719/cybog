@@ -44,6 +44,7 @@ class AuditEvent(BaseModel):
 
     event_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     actor_uid: str
+    actor_user_id: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     action: str
     resource: str

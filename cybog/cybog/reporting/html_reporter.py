@@ -70,8 +70,23 @@ class HTMLReporter:
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         html = self._build_html(state, version_state)
-        path = output_dir / "report.html"
+        
+        is_verified = (version_state == ReportState.VERIFIED) if version_state is not None else not state.has_pending_validation()
+        status_suffix = "verified" if is_verified else "unverified"
+        filename = f"report_{status_suffix}.html"
+        
+        path = output_dir / filename
         path.write_text(html, encoding="utf-8")
+        
+        # Keep a symlink or copy to report.html for backwards compatibility
+        symlink_path = output_dir / "report.html"
+        if symlink_path.exists():
+            symlink_path.unlink()
+        try:
+            symlink_path.symlink_to(filename)
+        except OSError:
+            symlink_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            
         return path
 
     def _build_html(self, state: AssessmentState, version_state: Optional[ReportState] = None) -> str:

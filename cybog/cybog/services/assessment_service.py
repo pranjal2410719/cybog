@@ -40,6 +40,7 @@ class AssessmentService:
         scope_file: str,
         profile: str = "standard",
         name: Optional[str] = None,
+        owner_id: Optional[str] = None,
     ) -> AssessmentState:
         """
         Create a new assessment:
@@ -61,6 +62,7 @@ class AssessmentService:
             name=name,
             target_input_file=targets_file,
             scope_file=scope_file,
+            owner_id=owner_id,
             authorization=Authorization(
                 required=True,
                 scope_file=scope_file,
@@ -158,9 +160,10 @@ class AssessmentService:
             assessment_id=assessment_id,
         )
 
-        scheduler = JobScheduler(self.config, state, art_mgr)
+        from cybog.services.executor import AssessmentExecutor
+        executor: AssessmentExecutor = JobScheduler(self.config, state, art_mgr)
         try:
-            await scheduler.run(targets)
+            await executor.run(targets)
             state.assessment.status = self._terminal_status(state)
         except Exception as exc:
             self._log.error(f"Pipeline error: {exc}", assessment_id=assessment_id)
@@ -240,9 +243,10 @@ class AssessmentService:
             t for t in state.targets.values()
             if t.status in (TargetStatus.IN_SCOPE, TargetStatus.RUNNING)
         ]
-        scheduler = JobScheduler(self.config, state, art_mgr)
+        from cybog.services.executor import AssessmentExecutor
+        executor: AssessmentExecutor = JobScheduler(self.config, state, art_mgr)
         try:
-            await scheduler.run(targets)
+            await executor.run(targets)
             state.assessment.status = self._terminal_status(state)
         except Exception as exc:
             state.assessment.status = AssessmentStatus.FAILED
@@ -401,7 +405,13 @@ class AssessmentService:
             AssessmentStatus.AWAITING_VALIDATION,
             AssessmentStatus.COMPLETED,
         ):
-            state.assessment.status = self._terminal_status(state)
+            new_status = self._terminal_status(state)
+            if state.assessment.status != new_status:
+                state.assessment.status = new_status
+                if new_status == AssessmentStatus.COMPLETED:
+                    # Regenerate reports as VERIFIED
+                    art_mgr = ArtifactManager(self.config.output.root, state.assessment.assessment_id)
+                    self._auto_generate_reports(state, art_mgr)
         self.save_state(state)
 
     def _save(self, state: AssessmentState) -> None:

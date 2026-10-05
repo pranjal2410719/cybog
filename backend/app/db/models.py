@@ -37,7 +37,7 @@ class DBTarget(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=True)
     domain: Mapped[str] = mapped_column(String, nullable=False)
-    owner_uid: Mapped[str] = mapped_column(String, ForeignKey("users.uid"), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
     
     owner: Mapped["DBUser"] = relationship("DBUser", backref="targets")

@@ -199,9 +199,11 @@ async def create_assessment(
             targets_file=targets_content,
             scope_file=scope_content,
             profile=request.profile,
+            owner_id=user.id,
         )
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
+            actor_user_id=user.id,
             action="assessment.create",
             resource=f"assessment:{result['assessment_id']}",
             assessment_id=result["assessment_id"],
@@ -223,7 +225,10 @@ async def list_assessments(
     Returns a list of all assessments with their current status.
     """
     try:
-        return await service.list_assessments()
+        assessments = await service.list_assessments()
+        if user.role != Role.MANAGEMENT:
+            assessments = [a for a in assessments if a.get("owner_id") == user.id]
+        return assessments
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -243,6 +248,8 @@ async def get_assessment(
     """
     try:
         result = await service.get_assessment(assessment_id)
+        if user.role != Role.MANAGEMENT and result.get("owner_id") != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
         return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -267,6 +274,7 @@ async def start_assessment(
         result = service.start_assessment_async(assessment_id)
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
+            actor_user_id=user.id,
             action="assessment.start",
             resource=f"assessment:{assessment_id}",
             assessment_id=assessment_id,
@@ -320,6 +328,7 @@ async def cancel_assessment(
         result = await service.cancel_assessment(assessment_id)
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
+            actor_user_id=user.id,
             action="assessment.cancel",
             resource=f"assessment:{assessment_id}",
             assessment_id=assessment_id,
@@ -460,6 +469,7 @@ async def validate_finding(
         )
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
+            actor_user_id=user.id,
             action="finding.validate",
             resource=f"finding:{finding_id}",
             assessment_id=assessment_id,
@@ -494,6 +504,7 @@ async def reject_finding(
         )
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
+            actor_user_id=user.id,
             action="finding.validate",
             resource=f"finding:{finding_id}",
             assessment_id=assessment_id,

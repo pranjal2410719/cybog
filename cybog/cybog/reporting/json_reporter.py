@@ -20,8 +20,22 @@ class JSONReporter:
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         report = self._build_report(state, version_state)
-        path = output_dir / "report.json"
+        
+        status_suffix = "verified" if report.get("report_state") == "VERIFIED" else "unverified"
+        filename = f"report_{status_suffix}.json"
+        
+        path = output_dir / filename
         path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+        
+        # Keep a symlink or copy to report.json for backwards compatibility
+        symlink_path = output_dir / "report.json"
+        if symlink_path.exists():
+            symlink_path.unlink()
+        try:
+            symlink_path.symlink_to(filename)
+        except OSError:
+            symlink_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            
         return path
 
     def _build_report(

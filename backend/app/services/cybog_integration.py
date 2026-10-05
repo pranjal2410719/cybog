@@ -34,9 +34,11 @@ _running_tasks: Dict[str, "asyncio.Task[Any]"] = {}
 
 
 # Report files actually produced by the Cybog reporting stage. Single source of
-# truth for the API layer's allowlist; see cybog/reporting/{json,jsonl,html}_reporter.py
-# (no Markdown reporter exists).
-KNOWN_REPORT_FILES = frozenset({"report.json", "findings.jsonl", "report.html"})
+KNOWN_REPORT_FILES = frozenset({
+    "report.json", "report_unverified.json", "report_verified.json",
+    "findings.jsonl", "findings_unverified.jsonl", "findings_verified.jsonl",
+    "report.html", "report_unverified.html", "report_verified.html"
+})
 
 # Report artifacts live in a single directory named after the assessment, so
 # both the assessment id and the filename must be one safe path component.
@@ -121,6 +123,7 @@ class CybogIntegrationService:
         targets_file: str,
         scope_file: str,
         profile: str = "standard",
+        owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a new assessment.
@@ -152,6 +155,7 @@ class CybogIntegrationService:
                 scope_file=scope_path,
                 profile=profile,
                 name=name,
+                owner_id=owner_id,
             )
             
             return {
@@ -276,6 +280,11 @@ class CybogIntegrationService:
             raise ValueError(
                 f"Assessment {assessment_id} is CANCELLED. Cannot execute."
             )
+
+        # Set status to QUEUED immediately
+        from cybog.models.assessment import AssessmentStatus
+        state.assessment.status = AssessmentStatus.QUEUED
+        self._service.save_state(state)
 
         task, response = self._pipeline_coroutine(
             assessment_id,
@@ -643,6 +652,7 @@ class CybogIntegrationService:
             "updated_at": state.assessment.updated_at.isoformat()
             if hasattr(state.assessment, "updated_at")
             else state.assessment.created_at.isoformat(),
+            "owner_id": state.assessment.owner_id,
             "profile": state.assessment.profile,
             "artifact_root": state.assessment.artifact_root,
             "progress": {

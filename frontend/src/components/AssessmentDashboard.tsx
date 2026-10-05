@@ -237,7 +237,7 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
           </p>
         </div>
         <button
-          onClick={() => navigate('/assessments/new')}
+          onClick={() => navigate('/operator/assessments/new')}
           className="px-4 py-2 text-[14px] font-medium text-parchment rounded-input
                      transition-opacity hover:opacity-90 flex-shrink-0"
           style={{ background: '#27251e' }}
@@ -276,7 +276,7 @@ export function AssessmentDashboard({ onSelectAssessment }: AssessmentDashboardP
 
       {/* Empty state */}
       {!loading && !error && assessments.length === 0 && (
-        <EmptyState onNew={() => navigate('/assessments/new')} />
+        <EmptyState onNew={() => navigate('/operator/assessments/new')} />
       )}
 
       {/* Assessment cards */}

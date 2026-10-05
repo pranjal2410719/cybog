@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 class AssessmentStatus(str, Enum):
     CREATED = "CREATED"
+    QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
@@ -59,6 +60,7 @@ class Assessment(BaseModel):
     name: Optional[str] = None
     target_input_file: str
     scope_file: str
+    owner_id: Optional[str] = None
     status: AssessmentStatus = AssessmentStatus.CREATED
     authorization: Optional[Authorization] = None
     scope: Optional[Scope] = None

@@ -285,7 +285,7 @@ function DashboardPage() {
   const navigate = useNavigate();
   return (
     <AssessmentDashboard
-      onSelectAssessment={(id) => navigate(`/assessments/${id}`)}
+      onSelectAssessment={(id) => navigate(`/operator/assessments/${id}`)}
     />
   );
 }
@@ -299,7 +299,7 @@ function NewAssessmentPage() {
   return (
     <div className="max-w-2xl mx-auto">
       <AssessmentCreationForm
-        onAssessmentCreated={(id) => navigate(`/assessments/${id}`)}
+        onAssessmentCreated={(id) => navigate(`/operator/assessments/${id}`)}
       />
     </div>
   );
@@ -312,7 +312,7 @@ function AssessmentDetailPage() {
   return (
     <AssessmentDetail
       assessmentId={assessmentId}
-      onBack={() => navigate('/')}
+      onBack={() => navigate('/operator/dashboard')}
     />
   );
 }
@@ -357,7 +357,7 @@ function AssessmentFindingsPage() {
   return (
     <div className="space-y-6">
       <button
-        onClick={() => navigate(`/assessments/${assessmentId}`)}
+        onClick={() => navigate(`/operator/assessments/${assessmentId}`)}
         className="px-3 py-1.5 text-[14px] text-graphite border border-warm-mist rounded-btn hover:text-ink hover:border-ash transition-colors"
       >
         ← Back
@@ -421,7 +421,7 @@ function AssessmentReportsPage() {
   return (
     <div className="space-y-6">
       <button
-        onClick={() => navigate(`/assessments/${assessmentId}`)}
+        onClick={() => navigate(`/operator/assessments/${assessmentId}`)}
         className="px-3 py-1.5 text-[14px] text-graphite border border-warm-mist rounded-btn hover:text-ink hover:border-ash transition-colors"
       >
         ← Back
@@ -433,45 +433,65 @@ function AssessmentReportsPage() {
   );
 }
 
-// ─── Protected Route ──────────────────────────────────────────────────────────
+import { RoleGuard, RootRedirect } from './auth/RoleGuard';
+import { OperatorLayout } from './layouts/OperatorLayout';
+import { ValidatorLayout } from './layouts/ValidatorLayout';
+import { ManagementLayout } from './layouts/ManagementLayout';
+import { Role } from './lib/models';
+import { UserManagementPage } from './pages/management/Users';
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-parchment)' }}>
-        <div className="text-graphite">Loading...</div>
-      </div>
-    );
-  }
-
+function RootRoute() {
+  const { user } = useAuth();
   if (!user) {
     return <Login />;
   }
-
-  return <>{children}</>;
+  return <RootRedirect />;
 }
-
-// ─── Router ───────────────────────────────────────────────────────────────────
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: (
-      <ProtectedRoute>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { path: '', element: <DashboardPage /> },
-      { path: 'assessments', element: <AssessmentsPage /> },
-      { path: 'assessments/new', element: <NewAssessmentPage /> },
-      { path: 'assessments/:id', element: <AssessmentDetailPage /> },
-      { path: 'assessments/:id/findings', element: <AssessmentFindingsPage /> },
-      { path: 'assessments/:id/reports', element: <AssessmentReportsPage /> },
-    ],
+    element: <RootRoute />
   },
+  {
+    path: '/operator',
+    element: <RoleGuard allowedRoles={[Role.OPERATOR]} />,
+    children: [
+      {
+        element: <OperatorLayout />,
+        children: [
+          { path: 'dashboard', element: <DashboardPage /> },
+          { path: 'assessments/new', element: <NewAssessmentPage /> },
+          { path: 'assessments/:id', element: <AssessmentDetailPage /> },
+          { path: 'assessments/:id/reports', element: <AssessmentReportsPage /> },
+        ]
+      }
+    ]
+  },
+  {
+    path: '/validator',
+    element: <RoleGuard allowedRoles={[Role.VALIDATOR]} />,
+    children: [
+      {
+        element: <ValidatorLayout />,
+        children: [
+          { path: 'queue/:id', element: <AssessmentFindingsPage /> }, // Using AssessmentFindingsPage as a placeholder for validation queue
+        ]
+      }
+    ]
+  },
+  {
+    path: '/management',
+    element: <RoleGuard allowedRoles={[Role.MANAGEMENT]} />,
+    children: [
+      {
+        element: <ManagementLayout />,
+        children: [
+          { path: 'users', element: <UserManagementPage /> },
+        ]
+      }
+    ]
+  }
 ]);
 
 export default function App() {
