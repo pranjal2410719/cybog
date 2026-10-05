@@ -448,6 +448,7 @@ class CybogIntegrationService:
         finding_id: str,
         validation_type: str = "confirm",
         notes: Optional[str] = None,
+        actor_user_id: Optional[str] = None,
     ) -> bool:
         """
         Validate a finding (confirm or reject).
@@ -457,6 +458,7 @@ class CybogIntegrationService:
             finding_id: Finding ID
             validation_type: "confirm" or "reject"
             notes: Optional analyst notes
+            actor_user_id: User ID of the validator
             
         Returns:
             Success status
@@ -470,11 +472,11 @@ class CybogIntegrationService:
                 
             if validation_type == "confirm":
                 return self._service.confirm_finding(
-                    assessment_id, finding.dedup_key, notes
+                    assessment_id, finding.dedup_key, notes, actor_user_id
                 )
             else:  # reject
                 return self._service.reject_finding(
-                    assessment_id, finding.dedup_key, notes
+                    assessment_id, finding.dedup_key, notes, actor_user_id
                 )
         except Exception as exc:
             self._log.error(f"Failed to validate finding {finding_id}: {exc}")

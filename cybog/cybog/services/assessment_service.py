@@ -204,11 +204,21 @@ class AssessmentService:
             output_dir = art_mgr.root / "aggregate"
             output_dir.mkdir(parents=True, exist_ok=True)
             
-            JSONReporter().generate(state, output_dir)
+            context = {}
+            if state.assessment.verified:
+                context["verified_by"] = state.assessment.verified_by_user_id
+                context["verified_at"] = state.assessment.verified_at.strftime("%Y-%m-%d %H:%M:%S UTC") if state.assessment.verified_at else None
+
+            JSONReporter().generate(state, output_dir, context=context)
             JSONLReporter().generate(state, output_dir)
-            HTMLReporter().generate(state, output_dir)
+            HTMLReporter().generate(state, output_dir, context=context)
+            try:
+                from cybog.reporting.pdf_reporter import PDFReporter
+                PDFReporter().generate(state, output_dir, context=context)
+            except Exception as e:
+                self._log.warning(f"Could not generate PDF: {e}")
             
-            self._log.info(f"Auto-generated preliminary reports for {state.assessment.assessment_id}")
+            self._log.info(f"Auto-generated preliminary/verified reports for {state.assessment.assessment_id}")
         except Exception as exc:
             self._log.error(f"Failed to auto-generate reports: {exc}")
 
@@ -293,6 +303,7 @@ class AssessmentService:
         assessment_id: str,
         finding_dedup_key: str,
         analyst_notes: Optional[str] = None,
+        actor_user_id: Optional[str] = None,
     ) -> bool:
         """Analyst confirms a finding: VALIDATING -> VALIDATED -> REPORTABLE.
 
@@ -326,7 +337,7 @@ class AssessmentService:
         state.update_finding(finding)
         self._settle_task(state, finding.finding_id, "Confirmed by analyst")
         self._save(state)
-        self._refresh_assessment_status(state)
+        self._refresh_assessment_status(state, actor_user_id)
         return True
 
     def reject_finding(
@@ -334,6 +345,7 @@ class AssessmentService:
         assessment_id: str,
         finding_dedup_key: str,
         analyst_notes: Optional[str] = None,
+        actor_user_id: Optional[str] = None,
     ) -> bool:
         """Analyst rejects a finding: VALIDATING -> FALSE_POSITIVE."""
         state = self.load_state(assessment_id)
@@ -360,7 +372,7 @@ class AssessmentService:
         state.update_finding(finding)
         self._settle_task(state, finding.finding_id, "Rejected by analyst")
         self._save(state)
-        self._refresh_assessment_status(state)
+        self._refresh_assessment_status(state, actor_user_id)
         return True
 
     def pending_validation(self, assessment_id: str) -> list[dict]:
@@ -399,7 +411,7 @@ class AssessmentService:
         task.result = result
         task.completed_at = datetime.now(timezone.utc)
 
-    def _refresh_assessment_status(self, state: AssessmentState) -> None:
+    def _refresh_assessment_status(self, state: AssessmentState, actor_user_id: Optional[str] = None) -> None:
         """Recompute assessment status after an analyst decision."""
         if state.assessment.status in (
             AssessmentStatus.AWAITING_VALIDATION,
@@ -409,6 +421,10 @@ class AssessmentService:
             if state.assessment.status != new_status:
                 state.assessment.status = new_status
                 if new_status == AssessmentStatus.COMPLETED:
+                    # Mark as verified
+                    state.assessment.verified = True
+                    state.assessment.verified_by_user_id = actor_user_id
+                    state.assessment.verified_at = datetime.now(timezone.utc)
                     # Regenerate reports as VERIFIED
                     art_mgr = ArtifactManager(self.config.output.root, state.assessment.assessment_id)
                     self._auto_generate_reports(state, art_mgr)

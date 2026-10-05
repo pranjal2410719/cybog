@@ -466,6 +466,7 @@ async def validate_finding(
             finding_id,
             validation_type="confirm",
             notes=request.notes,
+            actor_user_id=user.id,
         )
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
@@ -501,6 +502,7 @@ async def reject_finding(
             finding_id,
             validation_type="reject",
             notes=request.notes,
+            actor_user_id=user.id,
         )
         audit_log.append(AuditEvent(
             actor_uid=user.uid,
@@ -711,6 +713,13 @@ async def download_report(
     Serves JSON, JSONL, and HTML reports as attachments.
     Returns 404 if the report does not exist or the assessment is not found.
     """
+    try:
+        assessment_data = await service.get_assessment(assessment_id)
+        if user.role != Role.MANAGEMENT and assessment_data.get("owner_id") != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
     # Validate filename: malformed/traversal -> 400, not-a-report -> 404
     try:
         _validate_report_filename(filename)
@@ -743,6 +752,17 @@ async def download_report(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
     _add_conditional_headers(response, file_path)
+    
+    import json
+    audit_log.append(AuditEvent(
+        actor_uid=user.uid,
+        actor_user_id=user.id,
+        action="REPORT_DOWNLOADED",
+        resource=f"report:{filename}",
+        assessment_id=assessment_id,
+        detail=json.dumps({"format": filename.split(".")[-1], "report_id": filename}),
+    ))
+    
     return response
 
 
@@ -825,6 +845,13 @@ async def download_export(
     Returns the ZIP file for the assessment export.
     """
     try:
+        assessment_data = await service.get_assessment(assessment_id)
+        if user.role != Role.MANAGEMENT and assessment_data.get("owner_id") != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    try:
         info = service.get_export_download_info(export_id)
     except InvalidExportRequest as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -843,6 +870,16 @@ async def download_export(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Export file missing")
 
+    import json
+    audit_log.append(AuditEvent(
+        actor_uid=user.uid,
+        actor_user_id=user.id,
+        action="EXPORT_DOWNLOADED",
+        resource=f"export:{export_id}",
+        assessment_id=assessment_id,
+        detail=json.dumps({"format": "zip", "export_id": export_id}),
+    ))
+    
     return FileResponse(
         path,
         media_type="application/zip",

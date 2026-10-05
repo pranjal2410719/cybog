@@ -67,9 +67,10 @@ class HTMLReporter:
         state: AssessmentState,
         output_dir: Path,
         version_state: Optional[ReportState] = None,
+        context: dict = None,
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        html = self._build_html(state, version_state)
+        html = self._build_html(state, version_state, context)
         
         is_verified = (version_state == ReportState.VERIFIED) if version_state is not None else not state.has_pending_validation()
         status_suffix = "verified" if is_verified else "unverified"
@@ -89,7 +90,7 @@ class HTMLReporter:
             
         return path
 
-    def _build_html(self, state: AssessmentState, version_state: Optional[ReportState] = None) -> str:
+    def _build_html(self, state: AssessmentState, version_state: Optional[ReportState] = None, context: dict = None) -> str:
         a = state.assessment
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
         findings = list(state.findings.values())
@@ -105,11 +106,15 @@ class HTMLReporter:
                 if state.has_pending_validation()
                 else ReportState.VERIFIED
             )
+            
+        context = context or {}
+        verified_by = context.get("verified_by", "Unknown")
+        verified_at = context.get("verified_at", ts)
 
         if version_state == ReportState.PRELIMINARY:
             banner = (
                 '<div class="banner warn">'
-                '<h2>\u26a0 UNVERIFIED \u2014 AUTOMATED ASSESSMENT</h2>'
+                '<h2>\u26a0 UNVERIFIED SECURITY ASSESSMENT</h2>'
                 'Automated analysis identified potential security issues. '
                 'These findings have not yet been manually verified and '
                 'should not be treated as confirmed vulnerabilities.'
@@ -119,9 +124,9 @@ class HTMLReporter:
         elif version_state == ReportState.VERIFIED:
             banner = (
                 '<div class="banner ok">'
-                '<h2>\u2713 VERIFIED</h2>'
-                'These findings were manually verified by an authorized '
-                'security analyst.'
+                '<h2>\u2713 VERIFIED SECURITY ASSESSMENT</h2>'
+                f'<p style="margin: 0.25rem 0 0 0">Validated by: {verified_by}<br>'
+                f'Validated at: {verified_at}</p>'
                 '</div>'
             )
             badge = '<span class="badge badge-verified">VERIFIED</span>'

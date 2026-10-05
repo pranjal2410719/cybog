@@ -67,6 +67,9 @@ class Assessment(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    verified: bool = False
+    verified_by_user_id: Optional[str] = None
+    verified_at: Optional[datetime] = None
     config_snapshot: dict = Field(default_factory=dict)
     artifact_root: str = ""
     error: Optional[str] = None

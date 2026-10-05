@@ -17,9 +17,10 @@ class JSONReporter:
         state: AssessmentState,
         output_dir: Path,
         version_state: Optional[ReportState] = None,
+        context: dict = None,
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        report = self._build_report(state, version_state)
+        report = self._build_report(state, version_state, context)
         
         status_suffix = "verified" if report.get("report_state") == "VERIFIED" else "unverified"
         filename = f"report_{status_suffix}.json"
@@ -42,8 +43,10 @@ class JSONReporter:
         self,
         state: AssessmentState,
         version_state: Optional[ReportState] = None,
+        context: dict = None,
     ) -> dict:
         a = state.assessment
+        context = context or {}
         report = {
             "assessment_id": a.assessment_id,
             "profile": a.profile,
@@ -51,6 +54,9 @@ class JSONReporter:
             "created_at": a.created_at.isoformat(),
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "completed_at": a.completed_at.isoformat() if a.completed_at else None,
+            "verified": a.verified,
+            "verified_by_user_id": context.get("verified_by"),
+            "verified_at": context.get("verified_at"),
             "scope_file": a.scope_file,
             "target_input_file": a.target_input_file,
             "generated_at": datetime.utcnow().isoformat(),
