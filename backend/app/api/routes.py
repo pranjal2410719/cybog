@@ -160,11 +160,17 @@ async def health_check(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from app.db.session import get_db
+from app.db.models import DBTarget
+
 @api_router.post("/assessments", response_model=AssessmentResponse)
 async def create_assessment(
     request: AssessmentCreate,
     user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
+    db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     require_role(user, {Role.OPERATOR, Role.ANALYST})
     """
@@ -173,10 +179,25 @@ async def create_assessment(
     Validates the targets against scope and creates a new assessment in Cybog.
     """
     try:
+        targets_content = request.targets_file
+        scope_content = request.scope_file
+        
+        if request.target_id:
+            stmt = select(DBTarget).where(DBTarget.id == request.target_id)
+            result_db = await db.execute(stmt)
+            target = result_db.scalars().first()
+            if not target:
+                raise HTTPException(status_code=404, detail="Target not found")
+            targets_content = target.domain
+            scope_content = target.domain
+            
+        if not targets_content or not scope_content:
+            raise HTTPException(status_code=400, detail="Either targets/scope files or target_id must be provided")
+
         result = await service.create_assessment(
             name=request.name,
-            targets_file=request.targets_file,
-            scope_file=request.scope_file,
+            targets_file=targets_content,
+            scope_file=scope_content,
             profile=request.profile,
         )
         audit_log.append(AuditEvent(

@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 class AssessmentCreate(BaseModel):
     """Request model for creating an assessment."""
     name: str = Field(..., description="Assessment name")
-    targets_file: str = Field(..., description="Path to targets file OR file content")
-    scope_file: str = Field(..., description="Path to scope file OR file content")
+    targets_file: Optional[str] = Field(default=None, description="Path to targets file OR file content")
+    scope_file: Optional[str] = Field(default=None, description="Path to scope file OR file content")
+    target_id: Optional[str] = Field(default=None, description="Registered target ID")
     profile: str = Field(default="standard", description="Pipeline profile")
 
 class FileUploadResponse(BaseModel):
@@ -134,3 +135,15 @@ class FindingUpdate(BaseModel):
     finding: Dict[str, Any]
     action: str  # created, updated, validated, rejected
     timestamp: str
+class TargetCreate(BaseModel):
+    name: str
+    domain: str
+    description: Optional[str] = None
+
+class TargetResponse(BaseModel):
+    id: str
+    name: str
+    domain: str
+    description: Optional[str] = None
+    owner_uid: str
+    created_at: str

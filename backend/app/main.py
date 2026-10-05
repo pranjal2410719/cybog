@@ -105,8 +105,10 @@ app.add_middleware(
 )
 
 # Include API routes
+from app.api.target_routes import target_router
 app.include_router(api_router)
 app.include_router(auth_router)
+app.include_router(target_router)
 
 
 @app.get("/")

@@ -29,3 +29,15 @@ class DBSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
 
     user: Mapped["DBUser"] = relationship("DBUser", back_populates="sessions")
+
+class DBTarget(Base):
+    __tablename__ = "targets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=True)
+    domain: Mapped[str] = mapped_column(String, nullable=False)
+    owner_uid: Mapped[str] = mapped_column(String, ForeignKey("users.uid"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=func.now())
+    
+    owner: Mapped["DBUser"] = relationship("DBUser", backref="targets")
