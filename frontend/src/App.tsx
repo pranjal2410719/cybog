@@ -317,10 +317,44 @@ function AssessmentDetailPage() {
   );
 }
 
+import { useState, useEffect } from 'react';
+import { getPendingValidation, validateFinding, rejectFinding } from './api/validation';
+import type { FindingResponse } from './lib/models';
+
 function AssessmentFindingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const assessmentId = location.pathname.split('/')[2];
+  
+  const [findings, setFindings] = useState<FindingResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getPendingValidation(assessmentId)
+      .then(res => {
+        setFindings(res.findings);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message || 'Failed to load findings');
+        setLoading(false);
+      });
+  }, [assessmentId]);
+
+  const handleValidate = async (findingId: string, verdict: 'confirm' | 'reject') => {
+    try {
+      if (verdict === 'confirm') {
+        await validateFinding(assessmentId, findingId, 'Confirmed by analyst');
+      } else {
+        await rejectFinding(assessmentId, findingId, 'Rejected by analyst');
+      }
+      setFindings(prev => prev.filter(f => f.finding_id !== findingId));
+    } catch (err: any) {
+      alert(`Failed to ${verdict} finding: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <button
@@ -329,8 +363,53 @@ function AssessmentFindingsPage() {
       >
         ← Back
       </button>
-      <div className="text-center py-12 bg-soft-paper rounded-card border border-warm-mist shadow-subtle">
-        <p className="text-graphite text-[14px]">Findings view — coming soon</p>
+      
+      <div className="bg-soft-paper rounded-card border border-warm-mist shadow-subtle p-6">
+        <h2 className="text-[16px] text-ink font-semibold mb-4">Pending Findings ({findings.length})</h2>
+        {loading && <p className="text-graphite text-[14px]">Loading...</p>}
+        {error && <p className="text-red-500 text-[14px]">{error}</p>}
+        {!loading && !error && findings.length === 0 && (
+          <p className="text-graphite text-[14px] text-center py-8">No findings awaiting validation.</p>
+        )}
+        {!loading && !error && findings.length > 0 && (
+          <div className="space-y-4">
+            {findings.map((f) => (
+              <div key={f.finding_id} className="border border-warm-mist rounded-[8px] p-4 flex flex-col md:flex-row justify-between md:items-center gap-4 bg-[#fbf9f6]">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`px-2 py-0.5 rounded-[4px] text-[12px] font-medium border
+                      ${f.severity === 'critical' ? 'bg-red-50 border-red-200 text-red-700' :
+                        f.severity === 'high' ? 'bg-orange-50 border-orange-200 text-orange-700' :
+                        f.severity === 'medium' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
+                        'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                      {f.severity.toUpperCase()}
+                    </span>
+                    <h3 className="text-[15px] font-medium text-ink">{f.title}</h3>
+                  </div>
+                  <p className="text-[13px] text-graphite mb-2">{f.description}</p>
+                  <div className="text-[12px] text-graphite flex gap-4">
+                    <span>Target: {f.target_domain}</span>
+                    <span>Tool: {f.source_tool}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleValidate(f.finding_id, 'confirm')}
+                    className="px-4 py-2 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-[8px] text-[13px] font-medium transition-colors"
+                  >
+                    Confirm
+                  </button>
+                  <button 
+                    onClick={() => handleValidate(f.finding_id, 'reject')}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-[8px] text-[13px] font-medium transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
