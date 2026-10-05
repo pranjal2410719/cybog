@@ -4,6 +4,20 @@
  * TypeScript interfaces matching the backend API responses.
  */
 
+export enum Role {
+  OPERATOR = "OPERATOR",
+  ANALYST = "ANALYST",
+  MANAGEMENT = "MANAGEMENT",
+}
+
+export interface User {
+  uid: string;
+  name: string;
+  role: Role;
+  active: boolean;
+  created_at: string;
+}
+
 export interface AssessmentCreate {
   name: string;
   targets_file: string;

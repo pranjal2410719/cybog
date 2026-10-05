@@ -169,10 +169,14 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
   );
 }
 
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Login } from './components/Login';
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { logout, user } = useAuth();
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--color-parchment)' }}>
@@ -190,6 +194,19 @@ function Layout() {
         }}
       >
         <Sidebar />
+        <div className="mt-auto px-3 pb-4">
+           {user && (
+             <div className="flex flex-col gap-2">
+                <span className="text-[12px] text-graphite px-3">{user.name} ({user.role})</span>
+                <button
+                  onClick={logout}
+                  className="text-left px-3 py-2 text-[13px] text-graphite hover:text-ink hover:bg-warm-mist/40 rounded-[12px] transition-colors"
+                >
+                  Sign Out
+                </button>
+             </div>
+           )}
+        </div>
       </div>
 
       {/* ── Mobile Drawer Overlay ── */}
@@ -206,10 +223,26 @@ function Layout() {
           />
           {/* Drawer */}
           <div
-            className="absolute left-0 top-0 h-full w-64 border-r border-warm-mist shadow-subtle z-50"
+            className="absolute left-0 top-0 h-full w-64 border-r border-warm-mist shadow-subtle z-50 flex flex-col"
             style={{ background: '#f3f0eb' }}
           >
             <Sidebar onClose={() => setDrawerOpen(false)} />
+            <div className="mt-auto px-3 pb-4">
+              {user && (
+                 <div className="flex flex-col gap-2 border-t border-warm-mist pt-4">
+                    <span className="text-[12px] text-graphite px-3">{user.name}</span>
+                    <button
+                      onClick={() => {
+                        logout();
+                        setDrawerOpen(false);
+                      }}
+                      className="text-left px-3 py-2 text-[13px] text-graphite hover:text-ink hover:bg-warm-mist/40 rounded-[12px] transition-colors"
+                    >
+                      Sign Out
+                    </button>
+                 </div>
+               )}
+            </div>
           </div>
         </div>
       )}
@@ -322,12 +355,36 @@ function AssessmentReportsPage() {
   );
 }
 
+// ─── Protected Route ──────────────────────────────────────────────────────────
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-parchment)' }}>
+        <div className="text-graphite">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return <>{children}</>;
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Layout />,
+    element: (
+      <ProtectedRoute>
+        <Layout />
+      </ProtectedRoute>
+    ),
     children: [
       { path: '', element: <DashboardPage /> },
       { path: 'assessments', element: <AssessmentsPage /> },
@@ -340,5 +397,9 @@ const router = createBrowserRouter([
 ]);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  );
 }
