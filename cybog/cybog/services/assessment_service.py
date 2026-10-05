@@ -170,6 +170,7 @@ class AssessmentService:
         finally:
             state.assessment.completed_at = datetime.now(timezone.utc)
             state.save(art_mgr.state_path())
+            self._auto_generate_reports(state, art_mgr)
 
         return state
 
@@ -186,6 +187,27 @@ class AssessmentService:
             )
             return AssessmentStatus.AWAITING_VALIDATION
         return AssessmentStatus.COMPLETED
+
+    def _auto_generate_reports(self, state: AssessmentState, art_mgr: ArtifactManager) -> None:
+        """Automatically generate preliminary reports when assessment finishes."""
+        if state.assessment.status not in (AssessmentStatus.COMPLETED, AssessmentStatus.AWAITING_VALIDATION):
+            return
+        
+        try:
+            from cybog.reporting.json_reporter import JSONReporter
+            from cybog.reporting.jsonl_reporter import JSONLReporter
+            from cybog.reporting.html_reporter import HTMLReporter
+            
+            output_dir = art_mgr.root / "aggregate"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            JSONReporter().generate(state, output_dir)
+            JSONLReporter().generate(state, output_dir)
+            HTMLReporter().generate(state, output_dir)
+            
+            self._log.info(f"Auto-generated preliminary reports for {state.assessment.assessment_id}")
+        except Exception as exc:
+            self._log.error(f"Failed to auto-generate reports: {exc}")
 
     # ------------------------------------------------------------------
     # resume
@@ -229,6 +251,7 @@ class AssessmentService:
         finally:
             state.assessment.completed_at = datetime.now(timezone.utc)
             state.save(art_mgr.state_path())
+            self._auto_generate_reports(state, art_mgr)
 
         return state
 
