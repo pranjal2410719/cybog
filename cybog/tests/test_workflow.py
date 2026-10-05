@@ -4,6 +4,8 @@ from cybog.models.assessment import Assessment
 from cybog.state.assessment_state import AssessmentState
 from cybog.workflow.router import PipelineRouter
 from cybog.models.finding import Finding, Evidence, ValidationStatus, Severity
+from cybog.models.job import StageJob, JobStatus
+from cybog.config.models import CybogConfig
 
 
 def test_pipeline_router_decisions():
@@ -113,3 +115,60 @@ def test_evidence_model_expansion():
     assert e.reproduction == "Reproduce XSS by injecting script"
     assert e.analyst_notes == "Notes about the finding"
     assert e.validation_result == "Confirmed XSS"
+
+
+def test_failed_httpx_creates_skipped_rows_for_all_7_stages():
+    """B6: when httpx/naabu both gate False, katana/ffuf/nuclei get SKIPPED rows."""
+    from cybog.workflow.scheduler import JobScheduler
+    from cybog.artifacts.manager import ArtifactManager
+    import tempfile
+
+    assessment = Assessment(target_input_file="t.txt", scope_file="s.txt")
+    state = AssessmentState.create_new(assessment)
+    t = Target(domain="example.com")
+    state.add_target(t)
+
+    state.add_hosts(t.target_id, [
+        Host(hostname="api.example.com", target_id=t.target_id, ips=["1.2.3.4"], sources=["dnsx"]),
+    ])
+
+    cfg = CybogConfig()
+    with tempfile.TemporaryDirectory() as tmp:
+        mgr = ArtifactManager(tmp, assessment.assessment_id)
+        sched = JobScheduler(cfg, state, mgr)
+        sched._inflight = 0
+
+        state.add_job(StageJob(
+            assessment_id=assessment.assessment_id,
+            target_id=t.target_id,
+            target_domain=t.domain,
+            stage="dnsx",
+            status=JobStatus.COMPLETED,
+        ))
+        state.add_job(StageJob(
+            assessment_id=assessment.assessment_id,
+            target_id=t.target_id,
+            target_domain=t.domain,
+            stage="httpx",
+            status=JobStatus.FAILED,
+            error="Error: No such option: -l",
+        ))
+
+        job = state.get_job_for_stage(t.target_id, "httpx")
+        assert job is not None
+        sched._skip_downstream(
+            t.target_id, job,
+            ["katana", "ffuf", "nuclei"],
+            reason="httpx found 0 live services — skipping web crawl",
+        )
+
+        all_stages = {j.stage for j in state.jobs.values()}
+        assert all_stages == {"dnsx", "httpx", "katana", "ffuf", "nuclei"}
+
+        for stage in ("katana", "ffuf", "nuclei"):
+            sj = state.get_job_for_stage(t.target_id, stage)
+            assert sj is not None
+            assert sj.status == JobStatus.SKIPPED
+            assert "httpx found 0 live services" in (sj.skip_reason or "")
+
+        assert sched._inflight == 0

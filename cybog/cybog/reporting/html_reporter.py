@@ -4,8 +4,10 @@ cybog/reporting/html_reporter.py — Self-contained HTML report (no external CDN
 from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from cybog.state.assessment_state import AssessmentState
 from cybog.models.finding import Severity
+from cybog.reporting.report_model import ReportState
 
 
 _SEV_COLOR = {
@@ -41,6 +43,13 @@ tr:hover td{background:#f8fafc}
 .status-FAILED{color:#dc2626;font-weight:600}
 .status-SKIPPED{color:#94a3b8}
 .status-RUNNING{color:#2563eb;font-weight:600}
+.banner{padding:1rem 1.5rem;border-radius:.5rem;margin-bottom:1.5rem;font-weight:600;font-size:.95rem;border:1px solid}
+.banner.warn{background:#fef2f2;color:#991b1b;border-color:#fca5a5}
+.banner.warn h2{margin:0 0 .35rem;font-size:1.05rem}
+.banner.ok{background:#ecfdf5;color:#166534;border-color:#86efac}
+.banner.ok h2{margin:0 0 .35rem;font-size:1.05rem}
+.badge-verified{background:#16a34a}
+.badge-unverified{background:#dc2626}
 """
 
 
@@ -53,14 +62,19 @@ def _status_cell(status: str) -> str:
 
 
 class HTMLReporter:
-    def generate(self, state: AssessmentState, output_dir: Path) -> Path:
+    def generate(
+        self,
+        state: AssessmentState,
+        output_dir: Path,
+        version_state: Optional[ReportState] = None,
+    ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        html = self._build_html(state)
+        html = self._build_html(state, version_state)
         path = output_dir / "report.html"
         path.write_text(html, encoding="utf-8")
         return path
 
-    def _build_html(self, state: AssessmentState) -> str:
+    def _build_html(self, state: AssessmentState, version_state: Optional[ReportState] = None) -> str:
         a = state.assessment
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
         findings = list(state.findings.values())
@@ -68,6 +82,37 @@ class HTMLReporter:
         jobs = list(state.jobs.values())
 
         sev_counts = state.finding_counts_by_severity()
+
+        # --- Report state model (PRD S27-S32, S55-S58) ---
+        if version_state is None:
+            version_state = (
+                ReportState.PRELIMINARY
+                if state.has_pending_validation()
+                else ReportState.VERIFIED
+            )
+
+        if version_state == ReportState.PRELIMINARY:
+            banner = (
+                '<div class="banner warn">'
+                '<h2>\u26a0 UNVERIFIED \u2014 AUTOMATED ASSESSMENT</h2>'
+                'Automated analysis identified potential security issues. '
+                'These findings have not yet been manually verified and '
+                'should not be treated as confirmed vulnerabilities.'
+                '</div>'
+            )
+            badge = '<span class="badge badge-unverified">UNVERIFIED</span>'
+        elif version_state == ReportState.VERIFIED:
+            banner = (
+                '<div class="banner ok">'
+                '<h2>\u2713 VERIFIED</h2>'
+                'These findings were manually verified by an authorized '
+                'security analyst.'
+                '</div>'
+            )
+            badge = '<span class="badge badge-verified">VERIFIED</span>'
+        else:
+            banner = ''
+            badge = '<span class="badge badge-verified">' + version_state.value + '</span>'
 
         summary_stats = f"""
         <div class="grid">
@@ -142,7 +187,8 @@ class HTMLReporter:
   <p>Status: {_esc(a.status.value)} | Scope: {_esc(a.scope_file)}</p>
 </header>
 <main>
-  <div class="card"><h2>Assessment Summary</h2>{summary_stats}</div>
+  {banner}
+  <div class="card"><h2>Assessment Summary</h2>{summary_stats}<span style="float:right" class="badge">{badge}</span></div>
   <div class="card"><h2>Targets ({len(targets)})</h2>{targets_table}</div>
   <div class="card"><h2>Findings ({len(findings)})</h2>{findings_table}</div>
   <div class="card"><h2>Stage Execution ({len(jobs)} jobs)</h2>{jobs_table}</div>

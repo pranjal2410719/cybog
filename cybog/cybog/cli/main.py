@@ -9,8 +9,6 @@ Business logic is in the service layer — CLI only handles I/O and calls servic
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +18,7 @@ from rich.table import Table
 from rich import box
 
 from cybog.config.loader import load_config
-from cybog.logging_setup import setup_logging, get_logger
+from cybog.logging_setup import setup_logging
 from cybog.models.assessment import Assessment, AssessmentStatus
 
 app = typer.Typer(

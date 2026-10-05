@@ -13,8 +13,6 @@ setup(
     },
     install_requires=[
         "pydantic>=2.0.0",
-        "langgraph>=0.1.0",
-        "langchain-core>=0.1.0",
         "pyyaml>=6.0",
         "typer[all]>=0.9.0",
         "rich>=13.0.0",

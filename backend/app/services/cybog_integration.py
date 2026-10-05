@@ -8,24 +8,29 @@ Cybog's existing service layer internally.
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional
 
 from cybog.config.models import CybogConfig
 from cybog.models.assessment import AssessmentStatus
-from cybog.models.finding import Finding, ValidationStatus
 from cybog.models.job import JobStatus
 from cybog.models.target import TargetStatus
 from cybog.services.assessment_service import AssessmentService
 from cybog.state.assessment_state import AssessmentState
-from cybog.logging_setup import setup_logging, get_logger
+from cybog.logging_setup import get_logger
 from app.services.export_service import ExportService
 from app.services.progress_snapshot import build_progress_snapshot
+
+
+# Module-level task registry shared across all service instances. Each
+# CybogIntegrationService is request-scoped, so an instance attribute would
+# not survive a single pipeline execution. This registry tracks background
+# pipeline tasks so that duplicate starts are detectable and completed tasks
+# are cleaned up automatically.
+_running_tasks: Dict[str, "asyncio.Task[Any]"] = {}
 
 
 # Report files actually produced by the Cybog reporting stage. Single source of
@@ -199,6 +204,86 @@ class CybogIntegrationService:
             self._log.error(f"Failed to start assessment {assessment_id}: {exc}")
             raise
 
+    def _pipeline_coroutine(self, assessment_id: str, pipeline_name: str, coro_factory):
+        """
+        Build, register, and return a background pipeline task.
+
+        Duplicate-start protection is enforced here: if a non-terminal task is
+        already registered for *assessment_id*, no replacement is created and
+        the caller receives an ``already_running`` acknowledgement instead.
+
+        The done callback logs any pipeline exception (the service layer already
+        persists FAILED status) and removes the task from the registry only if
+        it is still the exact task that was registered.
+        """
+        existing = _running_tasks.get(assessment_id)
+        if existing is not None and not existing.done():
+            return None, {
+                "assessment_id": assessment_id,
+                "status": "RUNNING",
+                "already_running": True,
+            }
+
+        async def _run():
+            try:
+                await coro_factory()
+            except Exception as exc:
+                self._log.error(
+                    f"Background {pipeline_name} error for {assessment_id}: {exc}",
+                    assessment_id=assessment_id,
+                )
+
+        task = asyncio.create_task(_run())
+        _running_tasks[assessment_id] = task
+
+        def _on_done(t: "asyncio.Task[Any]") -> None:
+            # Remove only if this is still the registered task (no-replacement guard).
+            if _running_tasks.get(assessment_id) is t:
+                _running_tasks.pop(assessment_id, None)
+            if not t.cancelled():
+                exc = t.exception()
+                if exc is not None:
+                    self._log.error(
+                        f"Background {pipeline_name} exception for {assessment_id}: {exc}",
+                        assessment_id=assessment_id,
+                    )
+
+        task.add_done_callback(_on_done)
+        return task, {
+            "assessment_id": assessment_id,
+            "status": "RUNNING",
+            "already_running": False,
+        }
+
+    def start_assessment_async(self, assessment_id: str) -> Dict[str, Any]:
+        """
+        Start an assessment in the background and return a 202 acknowledgement.
+
+        Pre-launch validation ensures that a missing assessment yields 404 and
+        a CANCELLED assessment yields 400 before any background work begins.
+
+        If a pipeline is already running for this assessment, the response
+        contains ``already_running: true`` and no new task is created.
+        """
+        try:
+            state = self._service.load_state(assessment_id)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"No state found for assessment: {assessment_id}"
+            )
+
+        if state.assessment.status == AssessmentStatus.CANCELLED:
+            raise ValueError(
+                f"Assessment {assessment_id} is CANCELLED. Cannot execute."
+            )
+
+        task, response = self._pipeline_coroutine(
+            assessment_id,
+            "start",
+            lambda: self._service.execute(assessment_id),
+        )
+        return response
+
     async def resume_assessment(self, assessment_id: str) -> Dict[str, Any]:
         """
         Resume an assessment execution.
@@ -215,6 +300,32 @@ class CybogIntegrationService:
         except Exception as exc:
             self._log.error(f"Failed to resume assessment {assessment_id}: {exc}")
             raise
+
+    def resume_assessment_async(self, assessment_id: str) -> Dict[str, Any]:
+        """
+        Resume an assessment in the background and return a 202 acknowledgement.
+
+        Mirrors :meth:`start_assessment_async` with the same pre-launch
+        validation and duplicate-start protection.
+        """
+        try:
+            state = self._service.load_state(assessment_id)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"No state found for assessment: {assessment_id}"
+            )
+
+        if state.assessment.status == AssessmentStatus.CANCELLED:
+            raise ValueError(
+                f"Assessment {assessment_id} is CANCELLED. Cannot resume."
+            )
+
+        task, response = self._pipeline_coroutine(
+            assessment_id,
+            "resume",
+            lambda: self._service.resume(assessment_id),
+        )
+        return response
 
     async def cancel_assessment(self, assessment_id: str) -> bool:
         """

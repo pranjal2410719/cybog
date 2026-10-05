@@ -93,7 +93,7 @@ cd cybog
    - `nuclei`
 4. Updates Nuclei templates to the latest version (`nuclei -update-templates`).
 5. Establishes the default discovery wordlist (`config/wordlists/common.txt`).
-6. Installs Python dependencies (`pydantic`, `typer`, `rich`, `pyyaml`, `langgraph`) and registers the `cybog` CLI.
+6. Installs Python dependencies (`pydantic`, `typer`, `rich`, `pyyaml`) and registers the `cybog` CLI.
 7. Executes a health check to verify all binaries are active and responding.
 
 ---

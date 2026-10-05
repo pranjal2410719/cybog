@@ -7,19 +7,15 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import ValidationError
 
-from app.config import get_settings
 from app.models.api import (
     AssessmentCreate,
     AssessmentResponse,
-    AssessmentStatusResponse,
     ExportRequest,
     ExportResponse,
-    FileUploadRequest,
     FileUploadResponse,
     FindingResponse,
     FindingValidationRequest,
@@ -218,38 +214,48 @@ async def get_assessment(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@api_router.post("/assessments/{assessment_id}/start")
+@api_router.post("/assessments/{assessment_id}/start", status_code=202)
 async def start_assessment(
     assessment_id: str,
     user: Optional[str] = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
-    Start an assessment execution.
-    
-    Triggers the full pipeline execution for the assessment.
+    Start an assessment execution in the background.
+
+    Returns 202 immediately with an acknowledgement. Progress is visible
+    through the existing WebSocket and REST status endpoints.
     """
     try:
-        result = await service.start_assessment(assessment_id)
+        result = service.start_assessment_async(assessment_id)
         return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@api_router.post("/assessments/{assessment_id}/resume")
+@api_router.post("/assessments/{assessment_id}/resume", status_code=202)
 async def resume_assessment(
     assessment_id: str,
     user: Optional[str] = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
-    Resume an interrupted assessment.
-    
-    Resumes execution from where it left off, skipping completed stages.
+    Resume an interrupted assessment in the background.
+
+    Returns 202 immediately with an acknowledgement. Progress is visible
+    through the existing WebSocket and REST status endpoints.
     """
     try:
-        result = await service.resume_assessment(assessment_id)
+        result = service.resume_assessment_async(assessment_id)
         return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

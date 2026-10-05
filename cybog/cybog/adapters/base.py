@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -232,34 +231,6 @@ class ToolAdapter(ABC):
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
-    def _check_binary(self, binary: str) -> HealthCheckResult:
-        found = shutil.which(binary)
-        if not found:
-            return HealthCheckResult(
-                tool=self.metadata().get("name", binary),
-                binary=binary,
-                available=False,
-                error=f"Binary '{binary}' not found in PATH.",
-            )
-        # Try to get version
-        version: Optional[str] = None
-        try:
-            import subprocess
-            res = subprocess.run(
-                [binary, "--version"],
-                capture_output=True, text=True, timeout=10
-            )
-            version_text = (res.stdout or res.stderr or "").strip().splitlines()
-            version = version_text[0][:80] if version_text else "unknown"
-        except Exception:
-            version = "unknown"
-        return HealthCheckResult(
-            tool=self.metadata().get("name", binary),
-            binary=binary,
-            available=True,
-            version=version,
-        )
-
     @staticmethod
     def _parse_jsonl(text: str, logger=None) -> list[dict]:
         """Parse JSONL text. Skips malformed lines with optional warning."""

@@ -1,7 +1,7 @@
 """
 cybog/workflow/nodes.py
 
-LangGraph workflow node functions.
+Workflow node functions.
 Each node corresponds to one pipeline stage.
 Nodes contain NO tool-specific logic — they call adapters only via the ToolAdapter interface.
 State transitions are explicit and deterministic.
@@ -17,7 +17,6 @@ from cybog.models.job import StageJob, JobStatus
 from cybog.logging_setup import ContextLogger
 
 if TYPE_CHECKING:
-    from cybog.workflow.graph import WorkflowState
     from cybog.adapters.base import ToolAdapter
     from cybog.state.assessment_state import AssessmentState
     from cybog.artifacts.manager import ArtifactManager

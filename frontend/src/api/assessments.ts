@@ -28,23 +28,10 @@ export async function getAssessment(assessmentId: string): Promise<AssessmentRes
   return response.data;
 }
 
-/**
- * Timeout for calls that block until the whole pipeline finishes.
- *
- * `POST /assessments/{id}/start` (and `/resume`) are synchronous on the
- * server: they run every stage to completion before returning. A full run
- * against a real target takes minutes, so the shared 30s client timeout
- * aborted the request and the UI reported "could not be started: unknown
- * error" even though the server went on to complete the assessment. These
- * calls get their own, much longer budget.
- */
-const LONG_RUNNING_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
-
 export async function startAssessment(assessmentId: string): Promise<AssessmentResponse> {
   const response = await axiosInstance.post<AssessmentResponse>(
     `/assessments/${assessmentId}/start`,
     undefined,
-    { timeout: LONG_RUNNING_TIMEOUT_MS }
   );
   return response.data;
 }
@@ -53,7 +40,6 @@ export async function resumeAssessment(assessmentId: string): Promise<Assessment
   const response = await axiosInstance.post<AssessmentResponse>(
     `/assessments/${assessmentId}/resume`,
     undefined,
-    { timeout: LONG_RUNNING_TIMEOUT_MS }
   );
   return response.data;
 }

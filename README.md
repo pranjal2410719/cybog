@@ -119,9 +119,10 @@ cybor/
 │   ├── src/api/           #   centralized API layer (single source of truth)
 │   ├── src/components/    #   dashboard, form, detail views
 │   └── .env.example       #   copy to `.env.local` (untracked)
-├── docs/                  #   DEVELOPER_GUIDE + cybog-engine deep-dive
+├── docs/                  #   DEVELOPER_GUIDE, cybog-engine, PRD gap analysis
 │   ├── DEVELOPER_GUIDE.md
-│   └── cybog-engine.md
+│   ├── cybog-engine.md
+│   └── PRD_GAP_ANALYSIS.md
 └── reports/               # default assessment output root (untracked)
 ```
 
@@ -263,7 +264,16 @@ transitions; anything else is rejected by `Finding.transition_to()`.
 ```
 DISCOVERED → NEEDS_VALIDATION → VALIDATING → VALIDATED → REPORTABLE
                                         └───▶ FALSE_POSITIVE
+NEEDS_VALIDATION → DUPLICATE (terminal)
+NEEDS_VALIDATION → OUT_OF_SCOPE (terminal)
+NEEDS_VALIDATION → NEEDS_INVESTIGATION → (back to NEEDS_VALIDATION/VALIDATING)
 ```
+
+PRD v2.0 adds three triage outcomes — `DUPLICATE`, `OUT_OF_SCOPE`,
+`NEEDS_INVESTIGATION` — reachable from `NEEDS_VALIDATION`/`VALIDATING`.
+A finding also carries automated `confidence` (high/medium/low/unknown),
+plural `source_tools`, and analyst fields (`analyst_id`, `impact`,
+`remediation`, `verification_method`, `observed_behavior`).
 
 A finding that cannot be judged automatically stays `NEEDS_VALIDATION` for a
 human. **The system never invents a verdict.** An assessment with unresolved
@@ -355,10 +365,10 @@ filesystem.
 ## 7. Running the tests
 
 ```bash
-# Core pipeline — 205 tests
+# Core pipeline — 233 tests
 cd cybog && python -m pytest tests/ -q
 
-# Backend API — 102 tests
+# Backend API — 108 tests
 cd backend && python -m pytest tests/ -q
 
 # Frontend — 42 tests (vitest + testing-library)
@@ -367,6 +377,11 @@ npm test             # vitest run
 npm run build        # tsc typecheck + production build
 npm run typecheck    # typecheck only
 ```
+
+The `cybog` console script relies on editable-install metadata. If it fails
+with `PackageNotFoundError: No package metadata was found for cybog`, reinstall
+with `pip install -e . --no-deps` or run the CLI directly:
+`python3 -m cybog.cli.main <command>`.
 
 The backend suite needs the `cybog` package importable (it is, via
 `pip install -e`). Backend tests override the service dependency with a
@@ -419,10 +434,18 @@ duration of the scan.
 
 ## 10. End-to-end verification status
 
-Two live end-to-end runs were executed against the IANA-reserved
-`example.com` / `example.net` / `example.org` domains — safe, documentation-
-only targets that are not owned by a third party. These were the first runs
-that exercised **real scanner binaries** rather than stubbed adapters.
+Two live end-to-end runs were executed against a fully-authorized local
+lab target (`cybog-lab.test` → 127.0.0.1 via a local DNS resolver). These
+were the first runs that exercised **real scanner binaries** end to end
+through the full deterministic pipeline.
+
+The successful run produced **12 findings**, all `NEEDS_VALIDATION` — the
+designed two-plane behaviour (automated detection is never auto-verified).
+Detected findings included `.env` file disclosure (high), `.git/config`
+exposure (medium), missing security headers (info), and DNS/mDNS
+enumeration (info/low). The full traceability chain was verified for a real
+finding: Finding → nuclei template → execution.json (exit 0, 256s) →
+raw.jsonl → normalized.json → evidence (request + response) → report.
 
 | Check | Result |
 |---|---|
@@ -478,13 +501,10 @@ every tool version parses correctly — see §11, item 1.
 
 ## 11. Known limitations — read this before trusting the system
 
-**1. Real-tool compatibility is NOT fully proven.** This is the most important
-caveat. The core and backend tests exercise the orchestration with **stubbed
-adapters**. They prove the scheduler, state machine, lifecycle and export
-logic. They do **not** prove that the real scanner binaries emit the JSON
-Cybog expects. A tool version bump can change that output and break a stage
-silently. The live runs in §10 are encouraging but not a systematic validation
-of every tool and version.
+**1. Real-tool compatibility is now partially proven.** A full authorized
+local-lab run executed all 7 stages with real binaries and produced 12
+findings (see §10). The core/backend tests still use stubbed adapters for
+orchestration logic.
 
 **2. No containerization or CI.** There is no `Makefile` or GitHub Actions
 workflow. Everything is run manually via `setup.sh` and `scripts/tunnel-dev.sh`,
@@ -492,7 +512,8 @@ and the setup script assumes a Debian-family host. Tool versions are unpinned.
 
 **3. Authentication is a placeholder.** `get_current_user()` returns
 `"anonymous"`; there is no real auth. Every endpoint is effectively open —
-do not expose this backend to an untrusted network.
+do not expose this backend to an untrusted network. The API has no
+authentication, no rate limiting, and no multi-user RBAC yet (PRD §6/§9/§60).
 
 **4. Frontend tests cover the target logic and the form/dashboard flows, but
 not the WebSocket or export polling paths.** 42 tests run via `npm test`
@@ -502,6 +523,12 @@ distinguished — not live network behaviour.
 
 **5. Findings need humans.** By design, anything not automatically decidable
 waits for validation. An assessment will not reach `COMPLETED` on its own.
+
+**10. Reports have no state model yet.** Reports are single-version
+JSON/JSONL/HTML. The PRD's three-state model (PRELIMINARY → PARTIALLY VERIFIED
+→ VERIFIED, with versioning and mandatory unverified disclaimers) is
+implemented in `cybog/reporting/report_model.py` and the JSON/HTML reporters,
+but is not yet surfaced through the CLI `report` command or the API.
 
 **6. Unpinned dependencies.** Scanner binaries, nuclei templates, and wordlists
 are all fetched at `@latest`/unversioned. Reproducibility is not guaranteed.
@@ -523,15 +550,17 @@ status, not just the assessment status.
 
 1. **Return `202 Accepted` from `/start`** and drive progress over the existing
    WebSocket, so a long scan no longer depends on a long-lived HTTP request.
-2. **Real-tool integration validation** — run one authorized target end to end
-   with real binaries and confirm each stage parses correctly. This is the
-   biggest remaining gap.
+2. **Real-tool integration validation** — DONE for a single local target
+   (§10). Extend to a controlled benchmark set (OWASP Juice Shop, DVWA,
+   known-clean targets) and measure precision/recall.
 3. **Containerization was rejected in favour of `setup.sh`** — the project is
    VPS-hosted on Azure and `scripts/tunnel-dev.sh` is the single entrypoint.
    If you want a reproducible build, pin tool versions in `setup.sh` or write
    a Nix flake; a Dockerfile is not on the roadmap.
-4. **Implement real authentication** — the placeholder should not survive to
-   any shared deployment.
+4. **Implement real authentication and RBAC** — the placeholder should not
+   survive to any shared deployment. PRD defines three business roles:
+   Operator (submit + receive), Analyst (validate + explain), Management
+   (observe).
 5. **Ship a real wordlist** — the 10-line `config/wordlists/common.txt` makes
    the fuzzing stage nearly a no-op.
 6. **Make config paths portable** — remove the hardcoded `httpx.binary` path so

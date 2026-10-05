@@ -45,3 +45,28 @@ def test_state_persistence_and_resume(tmp_path):
     incomplete = loaded.get_incomplete_jobs()
     assert len(incomplete) == 1
     assert incomplete[0].stage == "dnsx"
+
+
+def test_add_hosts_merges_ips_and_sources():
+    assessment = Assessment(target_input_file="t.txt", scope_file="s.txt")
+    state = AssessmentState.create_new(assessment)
+    t = Target(domain="example.com")
+    state.add_target(t)
+
+    from cybog.models.target import Host, IP
+    state.add_hosts(t.target_id, [
+        Host(hostname="api.example.com", target_id=t.target_id, ips=["1.2.3.4"], sources=["subfinder"]),
+        Host(hostname="mentor.example.com", target_id=t.target_id, sources=["subfinder"]),
+    ])
+    state.add_hosts(t.target_id, [
+        Host(hostname="api.example.com", target_id=t.target_id, ips=["5.6.7.8"], sources=["dnsx"]),
+        Host(hostname="new.example.com", target_id=t.target_id, ips=["9.9.9.9"], sources=["subfinder"]),
+    ])
+
+    all_hosts = state.hosts[t.target_id]
+    by_name = {h.hostname: h for h in all_hosts}
+    assert set(by_name) == {"api.example.com", "mentor.example.com", "new.example.com"}
+    assert by_name["api.example.com"].ips == ["1.2.3.4", "5.6.7.8"]
+    assert "subfinder" in by_name["api.example.com"].sources
+    assert "dnsx" in by_name["api.example.com"].sources
+    assert by_name["mentor.example.com"].ips == []

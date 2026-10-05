@@ -29,16 +29,36 @@ class ValidationStatus(str, Enum):
     VALIDATED = "VALIDATED"
     FALSE_POSITIVE = "FALSE_POSITIVE"
     REPORTABLE = "REPORTABLE"
+    # PRD §24–§26: triage outcomes that exit the validation flow.
+    DUPLICATE = "DUPLICATE"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
+    NEEDS_INVESTIGATION = "NEEDS_INVESTIGATION"
+
+
+class Confidence(str, Enum):
+    """PRD §26: automated confidence in the finding, distinct from validation."""
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
 
 
 # The single authority for valid finding lifecycle transitions.
 # Anything not listed here is rejected by Finding.transition_to().
 ALLOWED_TRANSITIONS: dict[ValidationStatus, frozenset[ValidationStatus]] = {
     ValidationStatus.DISCOVERED: frozenset({ValidationStatus.NEEDS_VALIDATION}),
-    ValidationStatus.NEEDS_VALIDATION: frozenset({ValidationStatus.VALIDATING}),
+    ValidationStatus.NEEDS_VALIDATION: frozenset({
+        ValidationStatus.VALIDATING,
+        ValidationStatus.DUPLICATE,
+        ValidationStatus.OUT_OF_SCOPE,
+        ValidationStatus.NEEDS_INVESTIGATION,
+    }),
     ValidationStatus.VALIDATING: frozenset({
         ValidationStatus.VALIDATED,
         ValidationStatus.FALSE_POSITIVE,
+        ValidationStatus.DUPLICATE,
+        ValidationStatus.OUT_OF_SCOPE,
+        ValidationStatus.NEEDS_INVESTIGATION,
         # A validation attempt that cannot reach a verdict (no applicable
         # validator, or the tool failed) returns to the pending state rather
         # than guessing an outcome.
@@ -47,6 +67,12 @@ ALLOWED_TRANSITIONS: dict[ValidationStatus, frozenset[ValidationStatus]] = {
     ValidationStatus.VALIDATED: frozenset({ValidationStatus.REPORTABLE}),
     ValidationStatus.FALSE_POSITIVE: frozenset(),
     ValidationStatus.REPORTABLE: frozenset(),
+    ValidationStatus.DUPLICATE: frozenset(),
+    ValidationStatus.OUT_OF_SCOPE: frozenset(),
+    ValidationStatus.NEEDS_INVESTIGATION: frozenset({
+        ValidationStatus.NEEDS_VALIDATION,
+        ValidationStatus.VALIDATING,
+    }),
 }
 
 # Statuses a finding can no longer move out of.
@@ -54,6 +80,8 @@ TERMINAL_VALIDATION_STATUSES = frozenset({
     ValidationStatus.VALIDATED,
     ValidationStatus.FALSE_POSITIVE,
     ValidationStatus.REPORTABLE,
+    ValidationStatus.DUPLICATE,
+    ValidationStatus.OUT_OF_SCOPE,
 })
 
 
@@ -95,6 +123,17 @@ class Finding(BaseModel):
     occurrence_count: int = 1
     attack_chain: Optional[str] = None  # dedup_key of related finding
 
+    # --- PRD §24–§26 schema extension (all backward-compatible) ---
+    confidence: Optional[Confidence] = None  # automated confidence (§26)
+    analyst_id: Optional[str] = None  # UID of the analyst who validated (§24, §30)
+    analyst_notes: Optional[str] = None  # analyst reasoning at finding level (§24)
+    impact: Optional[str] = None  # impact statement (§24, §30)
+    remediation: Optional[str] = None  # fix guidance (§24, §30)
+    verification_method: Optional[str] = None  # how the analyst validated (§30)
+    observed_behavior: Optional[str] = None  # what was observed (§30)
+    source_tools: list[str] = Field(default_factory=list)  # PLURAL tool attribution (§24)
+    affected_parameters: list[str] = Field(default_factory=list)  # PRD §24
+
     @model_validator(mode="after")
     def set_dedup_key(self) -> "Finding":
         if not self.dedup_key:
@@ -103,6 +142,8 @@ class Finding(BaseModel):
                 f":{self.title}:{self.url or ''}:{self.template_id or ''}"
             )
             self.dedup_key = hashlib.sha256(key_parts.encode()).hexdigest()[:32]
+        if not self.source_tools and self.source_tool:
+            self.source_tools = [self.source_tool]
         return self
 
     # ------------------------------------------------------------------
@@ -114,7 +155,7 @@ class Finding(BaseModel):
 
         The full lifecycle is:
             DISCOVERED -> NEEDS_VALIDATION -> VALIDATING -> VALIDATED
-                                                       -> FALSE_POSITIVE
+                                                        -> FALSE_POSITIVE
             VALIDATED  -> REPORTABLE
 
         Anything not in ALLOWED_TRANSITIONS raises InvalidTransitionError.

@@ -28,7 +28,7 @@ from app.api import routes
 from app.config import settings as backend_settings
 from app.main import app as fastapi_app
 from app.main import manager
-from app.services.cybog_integration import CybogIntegrationService
+from app.services.cybog_integration import CybogIntegrationService, _running_tasks
 from app.services.progress_snapshot import (
     build_progress_snapshot,
     is_terminal_snapshot,
@@ -167,6 +167,13 @@ def connected():
     yield _connect
     for assessment_id, socket in registered:
         manager.disconnect(assessment_id, socket)
+
+
+@pytest.fixture(autouse=True)
+def _clear_running_tasks():
+    """Ensure background pipeline tasks from one test cannot leak into another."""
+    yield
+    _running_tasks.clear()
 
 
 @pytest.fixture
@@ -477,3 +484,160 @@ def test_missing_assessment_over_ws_reports_not_found(
     assert socket.sent[0]["status"] == "NOT_FOUND"
     assert socket.sent[0]["assessment_id"] == "assess-ghost"
     assert socket.sent[0]["is_terminal"] is True
+
+
+# ----------------------------------------------------------------------
+# 6. Background start/resume: 202 acknowledgement and duplicate guard
+# ----------------------------------------------------------------------
+def test_start_returns_202_and_registers_task(client, output_root, service, monkeypatch):
+    """POST /start returns 202 immediately and the task appears in the registry."""
+    aid = "assess-start-202"
+    _write_state(
+        output_root,
+        aid,
+        status=AssessmentStatus.CREATED,
+        targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
+        jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+    )
+
+    async def _fake_execute(execution_aid: str) -> AssessmentState:
+        await asyncio.sleep(0.2)
+        state = service.load_state(execution_aid)
+        state.assessment.status = AssessmentStatus.RUNNING
+        state.assessment.started_at = datetime(2026, 1, 1, 12, 0, 5)
+        return state
+
+    monkeypatch.setattr(service._service, "execute", _fake_execute)
+    with TestClient(fastapi_app) as fresh_client:
+        response = fresh_client.post(f"/api/v1/assessments/{aid}/start")
+        assert response.status_code == 202
+        body = response.json()
+        assert body["assessment_id"] == aid
+        assert body["status"] == "RUNNING"
+        assert body["already_running"] is False
+        task = _running_tasks.get(aid)
+        assert task is not None
+        assert not task.done()
+
+
+def test_duplicate_start_returns_already_running(client, output_root, service, monkeypatch):
+    """A second start for the same assessment returns already_running: true."""
+    aid = "assess-dup-start"
+    _write_state(
+        output_root,
+        aid,
+        status=AssessmentStatus.CREATED,
+        targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
+        jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+    )
+
+    async def _fake_execute(execution_aid: str) -> AssessmentState:
+        await asyncio.sleep(0.2)
+        state = service.load_state(execution_aid)
+        state.assessment.status = AssessmentStatus.RUNNING
+        state.assessment.started_at = datetime(2026, 1, 1, 12, 0, 5)
+        return state
+
+    monkeypatch.setattr(service._service, "execute", _fake_execute)
+    with TestClient(fastapi_app) as fresh_client:
+        first = fresh_client.post(f"/api/v1/assessments/{aid}/start")
+        assert first.status_code == 202
+        assert first.json()["already_running"] is False
+
+        second = fresh_client.post(f"/api/v1/assessments/{aid}/start")
+        assert second.status_code == 202
+        assert second.json()["already_running"] is True
+        # Only one background task was created.
+        assert sum(1 for t in _running_tasks.values() if not t.done()) == 1
+
+
+def test_resume_returns_202_and_registers_task(client, output_root, service, monkeypatch):
+    """POST /resume returns 202 immediately for a resumable assessment."""
+    aid = "assess-resume-202"
+    _write_state(
+        output_root,
+        aid,
+        status=AssessmentStatus.FAILED,
+        targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
+        jobs=[
+            _make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.FAILED),
+            _make_job(aid, "t-1", "one.example.com", "dnsx", JobStatus.PENDING),
+        ],
+    )
+
+    async def _fake_resume(execution_aid: str) -> AssessmentState:
+        await asyncio.sleep(0.2)
+        state = service.load_state(execution_aid)
+        state.assessment.status = AssessmentStatus.RUNNING
+        state.assessment.started_at = datetime(2026, 1, 1, 12, 0, 5)
+        return state
+
+    monkeypatch.setattr(service._service, "resume", _fake_resume)
+    with TestClient(fastapi_app) as fresh_client:
+        response = fresh_client.post(f"/api/v1/assessments/{aid}/resume")
+        assert response.status_code == 202
+        body = response.json()
+        assert body["assessment_id"] == aid
+        assert body["status"] == "RUNNING"
+        assert body["already_running"] is False
+        task = _running_tasks.get(aid)
+        assert task is not None
+        assert not task.done()
+
+
+def test_start_missing_assessment_returns_404(client):
+    """A start for a non-existent assessment yields 404."""
+    with TestClient(fastapi_app) as fresh_client:
+        response = fresh_client.post("/api/v1/assessments/does-not-exist/start")
+    assert response.status_code == 404
+    assert "does-not-exist" in response.json()["detail"]
+
+
+def test_start_cancelled_assessment_returns_400(client, output_root):
+    """A start for a CANCELLED assessment yields 400."""
+    aid = "assess-cancelled-start"
+    _write_state(
+        output_root,
+        aid,
+        status=AssessmentStatus.CANCELLED,
+        targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
+        jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+    )
+
+    with TestClient(fastapi_app) as fresh_client:
+        response = fresh_client.post(f"/api/v1/assessments/{aid}/start")
+    assert response.status_code == 400
+    assert "CANCELLED" in response.json()["detail"]
+
+
+def test_websocket_receives_progress_after_background_start(
+    monkeypatch, service, output_root, connected
+):
+    """A WebSocket client receives real progress after a background start."""
+    aid = "assess-ws-bg"
+    _write_state(
+        output_root,
+        aid,
+        status=AssessmentStatus.CREATED,
+        targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
+        jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+    )
+    monkeypatch.setattr(main_module, "get_cybog_service", lambda: service)
+
+    received: List[Dict[str, Any]] = []
+
+    def interact() -> None:
+        with TestClient(fastapi_app) as ws_client:
+            with ws_client.websocket_connect(f"/ws/assessments/{aid}") as ws:
+                for _ in range(2):
+                    received.append(ws.receive_json())
+
+    thread = threading.Thread(target=interact, daemon=True)
+    thread.start()
+    thread.join(timeout=20)
+    assert not thread.is_alive(), "websocket push loop never sent a message"
+
+    assert received[0]["type"] == "connected"
+    progress = received[1]
+    assert progress["type"] == "progress"
+    assert progress["assessment_id"] == aid

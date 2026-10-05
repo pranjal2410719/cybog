@@ -26,7 +26,6 @@ from cybog.config.models import AuthToolConfig
 from cybog.models.execution import ToolResult
 from cybog.models.finding import Finding, Evidence, Severity, ValidationStatus
 from cybog.models.job import StageJob
-from cybog.models.target import URL
 from cybog.logging_setup import get_logger
 
 _log = get_logger("adapters.auth")

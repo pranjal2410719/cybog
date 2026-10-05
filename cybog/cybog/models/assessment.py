@@ -23,6 +23,9 @@ class AssessmentStatus(str, Enum):
     # Pipeline finished but findings still require human validation. This is
     # deliberately not COMPLETED: the assessment has unresolved findings.
     AWAITING_VALIDATION = "AWAITING_VALIDATION"
+    # PRD §64: pipeline finished with some stages failing but the assessment
+    # did not fully fail — a partial result is still reportable.
+    PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
 
 
 class AuthorizationStatus(str, Enum):

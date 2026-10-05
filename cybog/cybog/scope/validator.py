@@ -11,10 +11,9 @@ from __future__ import annotations
 import fnmatch
 import re
 from pathlib import Path
-from typing import Optional
 
 from cybog.models.assessment import Authorization, AuthorizationStatus, Scope
-from cybog.models.target import Target, TargetStatus
+from cybog.models.target import Target
 from cybog.logging_setup import get_logger
 
 _log = get_logger("scope.validator")

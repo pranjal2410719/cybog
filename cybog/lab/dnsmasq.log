@@ -1,0 +1,6 @@
+dnsmasq: started, version 2.92 cachesize 150
+dnsmasq: compile time options: IPv6 GNU-getopt DBus no-UBus i18n IDN2 DHCP DHCPv6 no-Lua TFTP conntrack ipset nftset auth DNSSEC loop-detect inotify dumpfile
+dnsmasq: reading /etc/resolv.conf
+dnsmasq: using nameserver 127.0.0.53#53
+dnsmasq: read /etc/hosts - 8 names
+dnsmasq: exiting on receipt of SIGTERM

@@ -190,7 +190,7 @@ def build_progress_snapshot(
         1 for t in state.targets.values() if t.status == TargetStatus.FAILED
     )
     failed_stages = sorted(
-        {s for s, jobs in by_stage.items() if any(j.status == JobStatus.FAILED for j in jobs)}
+        s["stage"] for s in stages if s["status"] == "FAILED"
     )
     partial_failure = bool(failed_targets) and not all(
         t.status in (TargetStatus.COMPLETED, TargetStatus.FAILED)

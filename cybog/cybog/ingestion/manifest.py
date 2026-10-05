@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Optional
 
 from cybog.models.target import Target
-from cybog.scope.validator import ScopeValidator
 from cybog.logging_setup import get_logger
 
 _log = get_logger("ingestion.manifest")

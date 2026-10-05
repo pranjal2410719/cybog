@@ -1,24 +1,36 @@
 """
-cybog/reporting/json_reporter.py — JSON report generator.
+cybog/reporting/json_reporter.py - JSON report generator.
 """
 from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
 from cybog.state.assessment_state import AssessmentState
+from cybog.reporting.report_model import ReportState
 
 
 class JSONReporter:
-    def generate(self, state: AssessmentState, output_dir: Path) -> Path:
+    def generate(
+        self,
+        state: AssessmentState,
+        output_dir: Path,
+        version_state: Optional[ReportState] = None,
+    ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        report = self._build_report(state)
+        report = self._build_report(state, version_state)
         path = output_dir / "report.json"
         path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         return path
 
-    def _build_report(self, state: AssessmentState) -> dict:
+    def _build_report(
+        self,
+        state: AssessmentState,
+        version_state: Optional[ReportState] = None,
+    ) -> dict:
         a = state.assessment
-        return {
+        report = {
             "assessment_id": a.assessment_id,
             "profile": a.profile,
             "status": a.status.value,
@@ -52,6 +64,32 @@ class JSONReporter:
             "jobs": [j.model_dump() for j in state.jobs.values()],
             "artifacts": [art.model_dump() for art in state.artifacts.values()],
         }
+
+        # --- Report state model (PRD S27-S32, S55-S58) ---
+        if version_state is None:
+            version_state = (
+                ReportState.PRELIMINARY
+                if state.has_pending_validation()
+                else ReportState.VERIFIED
+            )
+
+        if version_state == ReportState.PRELIMINARY:
+            report["report_state"] = "PRELIMINARY"
+            report["disclaimer"] = (
+                "Automated analysis identified potential security issues. "
+                "These findings have not yet been manually verified and "
+                "should not be treated as confirmed vulnerabilities."
+            )
+        elif version_state == ReportState.VERIFIED:
+            report["report_state"] = "VERIFIED"
+            report["disclaimer"] = (
+                "These findings were manually verified by an authorized "
+                "security analyst."
+            )
+        else:
+            report["report_state"] = version_state.value
+
+        return report
 
     @staticmethod
     def _count_by(items, attr: str) -> dict:

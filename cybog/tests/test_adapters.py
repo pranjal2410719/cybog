@@ -87,3 +87,45 @@ def test_nuclei_adapter_normalization(tmp_path):
     assert f1.severity.value == "critical"
     assert f1.template_id == "cve-2021-44228"
     assert len(f1.evidence) > 0
+
+
+def test_katana_command_has_exactly_one_depth_flag(tmp_path):
+    adapter = KatanaAdapter(ToolConfig(
+        enabled=True, binary="katana",
+        extra_args=["-ct", "60s"],
+    ))
+    job = StageJob(assessment_id="a1", target_id="t1", target_domain="example.com", stage="katana")
+    cmd = adapter.build_command(job, tmp_path, {"httpx_urls": ["https://example.com"]})
+    depth_occurs = sum(1 for i, v in enumerate(cmd) if v == "-d")
+    assert depth_occurs == 0, f"katana command should have zero hardcoded -d flags, got: {cmd}"
+
+
+def test_ffuf_build_commands_fans_out_per_url(tmp_path):
+    adapter = FfufAdapter(FfufToolConfig(
+        enabled=True, binary="ffuf",
+        wordlist=str(tmp_path / "w.txt"),
+        max_targets=5,
+    ))
+    (tmp_path / "w.txt").write_text("admin\napi\nlogin\n")
+    job = StageJob(assessment_id="a1", target_id="t1", target_domain="example.com", stage="ffuf")
+    urls = ["https://a.example.com", "https://b.example.com", "https://c.example.com"]
+    cmds = adapter.build_commands(job, tmp_path, {"httpx_urls": urls})
+    assert len(cmds) == 3
+    for idx, cmd in enumerate(cmds):
+        assert "-u" in cmd
+        assert any("FUZZ" in v for v in cmd)
+        assert any(str(tmp_path / f"raw.{idx}.json") == v for v in cmd)
+
+
+def test_ffuf_parse_output_merges_indexed_files(tmp_path):
+    adapter = FfufAdapter(FfufToolConfig(
+        enabled=True, binary="ffuf",
+        wordlist=str(tmp_path / "w.txt"),
+    ))
+    (tmp_path / "w.txt").write_text("admin\n")
+    (tmp_path / "raw.0.json").write_text('{"results": [{"url": "https://a.example.com/admin", "status": 200, "input": {"FUZZ": "admin"}}]}')
+    (tmp_path / "raw.1.json").write_text('{"results": [{"url": "https://b.example.com/login", "status": 403, "input": {"FUZZ": "login"}}]}')
+    dummy_res = ToolResult(tool="ffuf", binary="ffuf", command="ffuf", exit_code=0, stdout="", stderr="", duration_seconds=1.0)
+    parsed = adapter.parse_output(dummy_res, tmp_path)
+    assert len(parsed) == 2
+    assert parsed[0]["url"] == "https://a.example.com/admin"
