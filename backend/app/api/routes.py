@@ -24,6 +24,12 @@ from app.models.api import (
 from app.services.cybog_integration import CybogIntegrationService, KNOWN_REPORT_FILES
 from app.services.export_service import InvalidExportRequest
 from app.config import settings as backend_settings
+from app.services.auth_service import (
+    Role,
+    audit_log,
+    get_current_user as _resolve_user,
+    require_role,
+)
 
 
 api_router = APIRouter(prefix="/api/v1")
@@ -58,13 +64,23 @@ def get_cybog_service() -> CybogIntegrationService:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> Optional[str]:
-    """Placeholder for authentication - returns user ID if token is valid."""
-    if credentials is None:
-        return None
-    
-    # TODO: Implement token validation
-    return "anonymous"
+):
+    """Resolve the authenticated user from a Bearer token.
+
+    Replaces the previous stub that returned the literal string "anonymous".
+    Returns None when no credential is supplied, so endpoints can decide
+    whether anonymous access is acceptable.
+    """
+    token = credentials.credentials if credentials is not None else None
+    return _resolve_user(token)
+
+
+def _require_operator(user) -> None:
+    require_role(user, {Role.OPERATOR, Role.ANALYST})
+
+
+def _require_analyst(user) -> None:
+    require_role(user, {Role.ANALYST})
 
 
 @api_router.post("/files/upload", response_model=FileUploadResponse)
@@ -160,6 +176,7 @@ async def create_assessment(
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
+    require_role(user, {Role.OPERATOR, Role.ANALYST})
     Create a new assessment.
     
     Validates the targets against scope and creates a new assessment in Cybog.
@@ -221,6 +238,7 @@ async def start_assessment(
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
+    require_role(user, {Role.OPERATOR, Role.ANALYST})
     Start an assessment execution in the background.
 
     Returns 202 immediately with an acknowledgement. Progress is visible
@@ -267,6 +285,7 @@ async def cancel_assessment(
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
+    require_role(user, {Role.OPERATOR, Role.ANALYST})
     Cancel an assessment.
     
     Marks the assessment as cancelled and stops execution.
@@ -394,6 +413,7 @@ async def validate_finding(
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
+    require_role(user, {Role.ANALYST})
     Validate a finding (confirm).
     
     Moves a finding from VALIDATING to VALIDATED/REPORTABLE.
@@ -419,6 +439,7 @@ async def reject_finding(
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
+    require_role(user, {Role.ANALYST})
     Reject a finding (mark as false positive).
     
     Moves a finding from VALIDATING to FALSE_POSITIVE.
@@ -455,6 +476,16 @@ async def get_assessment_artifacts(
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api_router.get("/audit/events")
+async def list_audit_events(
+    assessment_id: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+):
+    require_role(user, {Role.ANALYST, Role.MANAGEMENT})
+    events = audit_log.list(assessment_id=assessment_id)
+    return {"events": [e.model_dump(mode="json") for e in events]}
 
 
 @api_router.get("/assessments/{assessment_id}/reports")
