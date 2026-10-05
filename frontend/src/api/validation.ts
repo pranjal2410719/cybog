@@ -5,6 +5,13 @@
 import type { FindingResponse } from '../lib/models';
 import { axiosInstance } from './client';
 
+export type FindingVerdict =
+  | 'confirm'
+  | 'reject'
+  | 'duplicate'
+  | 'out_of_scope'
+  | 'needs_investigation';
+
 export async function getPendingValidation(assessmentId: string): Promise<{
   assessment_id: string;
   pending_count: number;
@@ -19,11 +26,12 @@ export async function getPendingValidation(assessmentId: string): Promise<{
 export async function validateFinding(
   assessmentId: string,
   findingId: string,
-  notes?: string
+  notes?: string,
+  verdict: FindingVerdict = 'confirm'
 ): Promise<{ success: boolean; finding_id: string }> {
   const response = await axiosInstance.post(
     `/assessments/${assessmentId}/findings/${findingId}/validate`,
-    { validation_type: 'confirm', notes }
+    { validation_type: verdict, notes }
   );
   return response.data;
 }

@@ -24,8 +24,10 @@ from app.models.api import (
 from app.services.cybog_integration import CybogIntegrationService, KNOWN_REPORT_FILES
 from app.services.export_service import InvalidExportRequest
 from app.config import settings as backend_settings
+from app.api.auth_routes import get_current_user, get_optional_current_user
 from app.services.auth_service import (
     Role,
+    AuditEvent,
     audit_log,
     get_current_user as _resolve_user,
     require_role,
@@ -62,17 +64,6 @@ def get_cybog_service() -> CybogIntegrationService:
     return CybogIntegrationService(config)
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-):
-    """Resolve the authenticated user from a Bearer token.
-
-    Replaces the previous stub that returned the literal string "anonymous".
-    Returns None when no credential is supplied, so endpoints can decide
-    whether anonymous access is acceptable.
-    """
-    token = credentials.credentials if credentials is not None else None
-    return _resolve_user(token)
 
 
 def _require_operator(user) -> None:
@@ -86,7 +77,7 @@ def _require_analyst(user) -> None:
 @api_router.post("/files/upload", response_model=FileUploadResponse)
 async def upload_file(
     file: UploadFile = File(...),
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -151,7 +142,7 @@ async def upload_file(
 
 @api_router.get("/health", response_model=HealthResponse)
 async def health_check(
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Health check endpoint.
@@ -172,11 +163,11 @@ async def health_check(
 @api_router.post("/assessments", response_model=AssessmentResponse)
 async def create_assessment(
     request: AssessmentCreate,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    """
     require_role(user, {Role.OPERATOR, Role.ANALYST})
+    """
     Create a new assessment.
     
     Validates the targets against scope and creates a new assessment in Cybog.
@@ -188,6 +179,13 @@ async def create_assessment(
             scope_file=request.scope_file,
             profile=request.profile,
         )
+        audit_log.append(AuditEvent(
+            actor_uid=user.uid,
+            action="assessment.create",
+            resource=f"assessment:{result['assessment_id']}",
+            assessment_id=result["assessment_id"],
+            new_state="CREATED",
+        ))
         return result
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -195,7 +193,7 @@ async def create_assessment(
 
 @api_router.get("/assessments", response_model=List[AssessmentResponse])
 async def list_assessments(
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> List[Dict[str, Any]]:
     """
@@ -214,7 +212,7 @@ async def list_assessments(
 )
 async def get_assessment(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -234,11 +232,11 @@ async def get_assessment(
 @api_router.post("/assessments/{assessment_id}/start", status_code=202)
 async def start_assessment(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    """
     require_role(user, {Role.OPERATOR, Role.ANALYST})
+    """
     Start an assessment execution in the background.
 
     Returns 202 immediately with an acknowledgement. Progress is visible
@@ -246,6 +244,13 @@ async def start_assessment(
     """
     try:
         result = service.start_assessment_async(assessment_id)
+        audit_log.append(AuditEvent(
+            actor_uid=user.uid,
+            action="assessment.start",
+            resource=f"assessment:{assessment_id}",
+            assessment_id=assessment_id,
+            new_state="STARTING",
+        ))
         return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -258,7 +263,7 @@ async def start_assessment(
 @api_router.post("/assessments/{assessment_id}/resume", status_code=202)
 async def resume_assessment(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -281,17 +286,24 @@ async def resume_assessment(
 @api_router.post("/assessments/{assessment_id}/cancel")
 async def cancel_assessment(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    """
     require_role(user, {Role.OPERATOR, Role.ANALYST})
+    """
     Cancel an assessment.
     
     Marks the assessment as cancelled and stops execution.
     """
     try:
         result = await service.cancel_assessment(assessment_id)
+        audit_log.append(AuditEvent(
+            actor_uid=user.uid,
+            action="assessment.cancel",
+            resource=f"assessment:{assessment_id}",
+            assessment_id=assessment_id,
+            new_state="CANCELLING",
+        ))
         return {"assessment_id": assessment_id, "cancelled": result}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -300,7 +312,7 @@ async def cancel_assessment(
 @api_router.get("/assessments/{assessment_id}/status")
 async def get_assessment_status(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -320,7 +332,7 @@ async def get_assessment_status(
 @api_router.get("/assessments/{assessment_id}/progress")
 async def get_assessment_progress(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -343,7 +355,7 @@ async def get_assessment_progress(
 async def get_findings(
     assessment_id: str,
     severity: Optional[str] = Query(None, description="Filter by severity"),
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> List[Dict[str, Any]]:
     """
@@ -362,7 +374,7 @@ async def get_findings(
 async def get_finding(
     assessment_id: str,
     finding_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -385,7 +397,7 @@ async def get_finding(
 @api_router.get("/assessments/{assessment_id}/validation/pending")
 async def get_pending_validation(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -409,11 +421,11 @@ async def validate_finding(
     assessment_id: str,
     finding_id: str,
     request: FindingValidationRequest,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    """
     require_role(user, {Role.ANALYST})
+    """
     Validate a finding (confirm).
     
     Moves a finding from VALIDATING to VALIDATED/REPORTABLE.
@@ -425,6 +437,14 @@ async def validate_finding(
             validation_type="confirm",
             notes=request.notes,
         )
+        audit_log.append(AuditEvent(
+            actor_uid=user.uid,
+            action="finding.validate",
+            resource=f"finding:{finding_id}",
+            assessment_id=assessment_id,
+            new_state="VALIDATED",
+            detail=request.notes,
+        ))
         return {"success": result, "finding_id": finding_id}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -435,11 +455,11 @@ async def reject_finding(
     assessment_id: str,
     finding_id: str,
     request: FindingValidationRequest,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    """
     require_role(user, {Role.ANALYST})
+    """
     Reject a finding (mark as false positive).
     
     Moves a finding from VALIDATING to FALSE_POSITIVE.
@@ -451,6 +471,14 @@ async def reject_finding(
             validation_type="reject",
             notes=request.notes,
         )
+        audit_log.append(AuditEvent(
+            actor_uid=user.uid,
+            action="finding.validate",
+            resource=f"finding:{finding_id}",
+            assessment_id=assessment_id,
+            new_state="VALIDATED",
+            detail=request.notes,
+        ))
         return {"success": result, "finding_id": finding_id}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -460,7 +488,7 @@ async def reject_finding(
 async def get_assessment_artifacts(
     assessment_id: str,
     artifact_type: str = Query("all", description="Type of artifacts"),
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -491,7 +519,7 @@ async def list_audit_events(
 @api_router.get("/assessments/{assessment_id}/reports")
 async def get_assessment_reports(
     assessment_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -573,7 +601,7 @@ def _add_conditional_headers(response: Response, file_path: Path) -> None:
 async def view_report_inline(
     assessment_id: str,
     filename: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> FileResponse:
     """
@@ -642,7 +670,7 @@ async def view_report_inline(
 async def download_report(
     assessment_id: str,
     filename: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> FileResponse:
     """
@@ -690,7 +718,7 @@ async def download_report(
 async def create_export(
     assessment_id: str,
     request: ExportRequest,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -719,7 +747,7 @@ async def create_export(
 async def get_export_status(
     assessment_id: str,
     export_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
     """
@@ -756,7 +784,7 @@ async def get_export_status(
 async def download_export(
     assessment_id: str,
     export_id: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> FileResponse:
     """

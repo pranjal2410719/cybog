@@ -1,6 +1,6 @@
 /**
  * Cybog Frontend API Models
- * 
+ *
  * TypeScript interfaces matching the backend API responses.
  */
 
@@ -168,6 +168,9 @@ export const VALIDATION_STATUSES = [
   'VALIDATED',
   'FALSE_POSITIVE',
   'REPORTABLE',
+  'DUPLICATE',
+  'OUT_OF_SCOPE',
+  'NEEDS_INVESTIGATION',
 ] as const;
 
 export type ValidationStatus = (typeof VALIDATION_STATUSES)[number];
@@ -181,12 +184,17 @@ export const TERMINAL_VALIDATION_STATUSES: ReadonlySet<string> = new Set([
   'VALIDATED',
   'FALSE_POSITIVE',
   'REPORTABLE',
+  'DUPLICATE',
+  'OUT_OF_SCOPE',
 ]);
 
 export const PENDING_VALIDATION_STATUSES: ReadonlySet<string> = new Set([
   'DISCOVERED',
   'NEEDS_VALIDATION',
   'VALIDATING',
+  'DUPLICATE',
+  'OUT_OF_SCOPE',
+  'NEEDS_INVESTIGATION',
 ]);
 
 export interface ReportEntry {

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import api_router, get_cybog_service
+from app.api.auth_routes import auth_router
 from app.config import get_settings
 from app.services.progress_snapshot import (
     build_progress_snapshot,
@@ -88,7 +89,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Cybog Backend API",
-    description="API for managing Cybog security assessments",
+    description="API for managing Cybog assessments",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -105,6 +106,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(api_router)
+app.include_router(auth_router)
 
 
 @app.get("/")
