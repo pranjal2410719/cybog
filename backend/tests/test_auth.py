@@ -11,7 +11,7 @@ from app.services.auth_service import (
 
 
 def test_role_enum_has_three_roles():
-    assert {r.value for r in Role} == {"OPERATOR", "ANALYST", "MANAGEMENT"}
+    assert {r.value for r in Role} == {"OPERATOR", "VALIDATOR", "MANAGEMENT"}
 
 
 def test_uid_format():
@@ -36,7 +36,7 @@ def test_unknown_uid_returns_none():
 def test_require_role_raises_403():
     operator = User(uid="USR-0001", name="x", role=Role.OPERATOR)
     with pytest.raises(HTTPException) as exc:
-        require_role(operator, {Role.ANALYST})
+        require_role(operator, {Role.VALIDATOR})
     assert exc.value.status_code == 403
 
 

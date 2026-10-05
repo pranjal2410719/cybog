@@ -36,7 +36,7 @@ export function Login() {
           </svg>
         </div>
         <h1 className="text-[20px] font-medium text-center text-ink mb-2 tracking-tight">Sign in to Cybor</h1>
-        <p className="text-[14px] text-graphite text-center mb-8">Enter your operator, analyst, or management UID to continue.</p>
+        <p className="text-[14px] text-graphite text-center mb-8">Enter your operator, validator, or management UID to continue.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -48,7 +48,7 @@ export function Login() {
               type="text"
               value={uid}
               onChange={(e) => setUid(e.target.value)}
-              placeholder="e.g. USR-0001"
+              placeholder="e.g. op_0001"
               className="w-full px-3 py-2 bg-transparent border border-warm-mist rounded-btn text-[14px] text-ink placeholder:text-ash focus:outline-none focus:border-deep-teal focus:ring-1 focus:ring-deep-teal"
               autoComplete="username"
               required

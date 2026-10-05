@@ -8,7 +8,7 @@
  * Mobile: sidebar collapses into a top bar with a hamburger drawer.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   createBrowserRouter,
   RouterProvider,
@@ -317,7 +317,6 @@ function AssessmentDetailPage() {
   );
 }
 
-import { useState, useEffect } from 'react';
 import { getPendingValidation, validateFinding, rejectFinding } from './api/validation';
 import type { FindingResponse } from './lib/models';
 
@@ -345,9 +344,9 @@ function AssessmentFindingsPage() {
   const handleValidate = async (findingId: string, verdict: 'confirm' | 'reject') => {
     try {
       if (verdict === 'confirm') {
-        await validateFinding(assessmentId, findingId, 'Confirmed by analyst');
+        await validateFinding(assessmentId, findingId, 'Confirmed by validator');
       } else {
-        await rejectFinding(assessmentId, findingId, 'Rejected by analyst');
+        await rejectFinding(assessmentId, findingId, 'Rejected by validator');
       }
       setFindings(prev => prev.filter(f => f.finding_id !== findingId));
     } catch (err: any) {

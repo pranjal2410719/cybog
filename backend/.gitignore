@@ -1,0 +1,8 @@
+
+# Runtime database
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Runtime artifacts
+artifacts/

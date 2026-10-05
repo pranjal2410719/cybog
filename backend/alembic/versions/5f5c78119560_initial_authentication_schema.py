@@ -25,7 +25,7 @@ def upgrade() -> None:
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('uid', sa.String(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('role', sa.Enum('OPERATOR', 'ANALYST', 'MANAGEMENT', name='role'), nullable=False),
+    sa.Column('role', sa.Enum('OPERATOR', 'VALIDATOR', 'MANAGEMENT', name='role'), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.PrimaryKeyConstraint('id')

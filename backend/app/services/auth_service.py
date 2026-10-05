@@ -31,7 +31,7 @@ def generate_uid(role: Role) -> str:
     """
     prefix_map = {
         Role.OPERATOR: "op_",
-        Role.ANALYST: "val_",
+        Role.VALIDATOR: "val_",
         Role.MANAGEMENT: "mg_"
     }
     prefix = prefix_map.get(role, "usr_")

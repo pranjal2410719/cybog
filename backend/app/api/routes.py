@@ -67,11 +67,11 @@ def get_cybog_service() -> CybogIntegrationService:
 
 
 def _require_operator(user) -> None:
-    require_role(user, {Role.OPERATOR, Role.ANALYST})
+    require_role(user, {Role.OPERATOR, Role.VALIDATOR})
 
 
-def _require_analyst(user) -> None:
-    require_role(user, {Role.ANALYST})
+def _require_validator(user) -> None:
+    require_role(user, {Role.VALIDATOR})
 
 
 @api_router.post("/files/upload", response_model=FileUploadResponse)
@@ -172,7 +172,7 @@ async def create_assessment(
     service: CybogIntegrationService = Depends(get_cybog_service),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    require_role(user, {Role.OPERATOR, Role.ANALYST})
+    require_role(user, {Role.OPERATOR, Role.VALIDATOR})
     """
     Create a new assessment.
     
@@ -256,7 +256,7 @@ async def start_assessment(
     user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    require_role(user, {Role.OPERATOR, Role.ANALYST})
+    require_role(user, {Role.OPERATOR, Role.VALIDATOR})
     """
     Start an assessment execution in the background.
 
@@ -310,7 +310,7 @@ async def cancel_assessment(
     user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    require_role(user, {Role.OPERATOR, Role.ANALYST})
+    require_role(user, {Role.OPERATOR, Role.VALIDATOR})
     """
     Cancel an assessment.
     
@@ -424,7 +424,7 @@ async def get_pending_validation(
     """
     Get findings awaiting validation.
     
-    Returns a list of findings that require human analyst validation.
+    Returns a list of findings that require human validator validation.
     """
     try:
         pending = await service.get_pending_validation(assessment_id)
@@ -445,7 +445,7 @@ async def validate_finding(
     user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    require_role(user, {Role.ANALYST})
+    require_role(user, {Role.VALIDATOR})
     """
     Validate a finding (confirm).
     
@@ -479,7 +479,7 @@ async def reject_finding(
     user: User = Depends(get_current_user),
     service: CybogIntegrationService = Depends(get_cybog_service),
 ) -> Dict[str, Any]:
-    require_role(user, {Role.ANALYST})
+    require_role(user, {Role.VALIDATOR})
     """
     Reject a finding (mark as false positive).
     
@@ -532,7 +532,7 @@ async def list_audit_events(
     assessment_id: Optional[str] = Query(None),
     user=Depends(get_current_user),
 ):
-    require_role(user, {Role.ANALYST, Role.MANAGEMENT})
+    require_role(user, {Role.VALIDATOR, Role.MANAGEMENT})
     events = audit_log.list(assessment_id=assessment_id)
     return {"events": [e.model_dump(mode="json") for e in events]}
 

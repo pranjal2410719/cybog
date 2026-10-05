@@ -6,7 +6,7 @@
 
 export enum Role {
   OPERATOR = "OPERATOR",
-  ANALYST = "ANALYST",
+  VALIDATOR = "VALIDATOR",
   MANAGEMENT = "MANAGEMENT",
 }
 

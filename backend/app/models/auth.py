@@ -19,13 +19,13 @@ class Role(str, Enum):
     """Three-role RBAC model (PRD §9).
 
     - ``OPERATOR``: can create/start/cancel assessments and upload files.
-    - ``ANALYST``: can validate/reject findings (exclusive) in addition to
+    - ``VALIDATOR``: can validate/reject findings (exclusive) in addition to
       operator actions.
     - ``MANAGEMENT``: read-only oversight — dashboards and audit review.
     """
 
     OPERATOR = "OPERATOR"
-    ANALYST = "ANALYST"
+    VALIDATOR = "VALIDATOR"
     MANAGEMENT = "MANAGEMENT"
 
 

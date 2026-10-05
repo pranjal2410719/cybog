@@ -6,9 +6,9 @@ from app.models.auth import Role
 async def seed():
     async with async_session_maker() as session:
         seeds = [
-            ("USR-0001", "Ada Lovelace", Role.OPERATOR),
-            ("USR-0024", "Grace Hopper", Role.ANALYST),
-            ("USR-0099", "Katherine Johnson", Role.MANAGEMENT),
+            ("op_0001", "Ada Lovelace", Role.OPERATOR),
+            ("val_0024", "Grace Hopper", Role.VALIDATOR),
+            ("mg_0099", "Katherine Johnson", Role.MANAGEMENT),
         ]
         
         for uid, name, role in seeds:
