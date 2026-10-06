@@ -71,14 +71,6 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(days=1)
     
-    new_session = DBSession(
-        token=token,
-        user_id=db_user.id,
-        expires_at=expires_at
-    )
-    db.add(new_session)
-    await db.commit()
-    
     user = User(
         id=db_user.id,
         uid=db_user.uid,
@@ -87,6 +79,15 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         active=db_user.active,
         created_at=db_user.created_at
     )
+    
+    new_session = DBSession(
+        token=token,
+        user_id=db_user.id,
+        expires_at=expires_at
+    )
+    db.add(new_session)
+    await db.commit()
+    
     return LoginResponse(token=token, user=user)
 
 

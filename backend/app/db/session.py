@@ -13,7 +13,7 @@ SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}, echo=False
 )
-async_session_maker = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+async_session_maker = async_sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 
 async def get_db():
     async with async_session_maker() as session:

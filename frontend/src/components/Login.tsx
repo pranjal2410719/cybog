@@ -21,7 +21,8 @@ export function Login() {
       window.localStorage.setItem('cybog_user', JSON.stringify(response.user));
       login(response.user);
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      const raw = err?.message ?? err;
+      setError(typeof raw === 'string' ? raw : JSON.stringify(raw));
     } finally {
       setLoading(false);
     }

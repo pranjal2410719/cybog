@@ -9,6 +9,9 @@ async def seed():
             ("op_0001", "Ada Lovelace", Role.OPERATOR),
             ("val_0024", "Grace Hopper", Role.VALIDATOR),
             ("mg_0099", "Katherine Johnson", Role.MANAGEMENT),
+            ("USR-0001", "Ada Lovelace", Role.OPERATOR),
+            ("USR-0024", "Grace Hopper", Role.VALIDATOR),
+            ("USR-0099", "Katherine Johnson", Role.MANAGEMENT),
         ]
         
         for uid, name, role in seeds:

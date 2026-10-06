@@ -32,14 +32,43 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: surface HTTP/network failures as a structured error
-// so callers can distinguish an empty-but-successful list from a failure.
+// Response interceptor: normalise every API error into a plain Error whose
+// `.message` is always a **string**.  This prevents React from crashing with
+// "Objects are not valid as a React child" when a component renders `err.message`.
+//
+// The backend can return several error shapes:
+//   • FastAPI HTTPException  → { "detail": "some string" }
+//   • global_exception_handler → { "error": "Internal server error", "detail": null }
+//   • Pydantic validation     → { "detail": [ { "loc": [...], "msg": "...", ... } ] }
+//
+// We extract the most useful human-readable string from any of them.
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      const detail = (error.response.data as any)?.detail ?? error.response.data;
-      error.message = detail ?? error.message;
+      const data = error.response.data;
+      let msg: string | undefined;
+
+      if (data != null) {
+        // data.detail can be a string, an array, an object, or null
+        const detail = (data as any)?.detail;
+        // data.error is used by the global_exception_handler
+        const errorField = (data as any)?.error;
+
+        if (typeof detail === 'string' && detail.length > 0) {
+          msg = detail;
+        } else if (Array.isArray(detail)) {
+          // Pydantic validation errors
+          msg = detail.map((d: any) => d?.msg ?? JSON.stringify(d)).join('; ');
+        } else if (typeof errorField === 'string' && errorField.length > 0) {
+          msg = errorField;
+        } else if (typeof data === 'string' && data.length > 0) {
+          msg = data;
+        }
+        // else: leave msg undefined → fall through to error.message below
+      }
+
+      error.message = msg ?? error.message ?? 'Request failed';
     }
     return Promise.reject(error);
   }

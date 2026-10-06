@@ -57,6 +57,11 @@ if [[ ! -f "$DB_FILE" ]]; then
 fi
 echo "✅  SQLite DB ready at $DB_FILE"
 
+# ---------- 5b. Seed default users (idempotent) ----------
+echo "🌱  Seeding default users…"
+(cd "${REPO_ROOT}/backend" && PYTHONPATH="${REPO_ROOT}/backend" python -m app.db.seed)
+
+
 # ---------- 6. Start / restart the FastAPI backend ----------
 # We use `nohup` + `&` so the server runs in the background while we continue.
 BACKEND_LOG="${REPO_ROOT}/backend/backend.log"

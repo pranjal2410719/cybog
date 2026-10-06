@@ -220,7 +220,7 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
       setStatus(statusData);
       setFindings(findingsData);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load assessment details');
+      setError(err?.message || 'Failed to load assessment details');
     } finally {
       setLoading(false);
     }

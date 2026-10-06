@@ -336,7 +336,7 @@ function AssessmentFindingsPage() {
         setLoading(false);
       })
       .catch(err => {
-        setError(err.message || 'Failed to load findings');
+        setError(String(err?.message || 'Failed to load findings'));
         setLoading(false);
       });
   }, [assessmentId]);
@@ -350,7 +350,7 @@ function AssessmentFindingsPage() {
       }
       setFindings(prev => prev.filter(f => f.finding_id !== findingId));
     } catch (err: any) {
-      alert(`Failed to ${verdict} finding: ${err.message}`);
+      alert(`Failed to ${verdict} finding: ${String(err?.message || 'unknown error')}`);
     }
   };
 
@@ -439,6 +439,7 @@ import { ValidatorLayout } from './layouts/ValidatorLayout';
 import { ManagementLayout } from './layouts/ManagementLayout';
 import { Role } from './lib/models';
 import { UserManagementPage } from './pages/management/Users';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function RootRoute() {
   const { user } = useAuth();
@@ -451,11 +452,21 @@ function RootRoute() {
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <RootRoute />
+    element: <RootRoute />,
+    errorElement: (
+      <ErrorBoundary>
+        <RootRoute />
+      </ErrorBoundary>
+    ),
   },
   {
     path: '/operator',
     element: <RoleGuard allowedRoles={[Role.OPERATOR]} />,
+    errorElement: (
+      <ErrorBoundary>
+        <RootRoute />
+      </ErrorBoundary>
+    ),
     children: [
       {
         element: <OperatorLayout />,
@@ -471,11 +482,17 @@ const router = createBrowserRouter([
   {
     path: '/validator',
     element: <RoleGuard allowedRoles={[Role.VALIDATOR]} />,
+    errorElement: (
+      <ErrorBoundary>
+        <RootRoute />
+      </ErrorBoundary>
+    ),
     children: [
       {
         element: <ValidatorLayout />,
         children: [
-          { path: 'queue/:id', element: <AssessmentFindingsPage /> }, // Using AssessmentFindingsPage as a placeholder for validation queue
+          { path: 'queue', element: <AssessmentFindingsPage /> },
+          { path: 'queue/:id', element: <AssessmentFindingsPage /> },
         ]
       }
     ]
@@ -483,6 +500,11 @@ const router = createBrowserRouter([
   {
     path: '/management',
     element: <RoleGuard allowedRoles={[Role.MANAGEMENT]} />,
+    errorElement: (
+      <ErrorBoundary>
+        <RootRoute />
+      </ErrorBoundary>
+    ),
     children: [
       {
         element: <ManagementLayout />,
@@ -496,8 +518,10 @@ const router = createBrowserRouter([
 
 export default function App() {
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

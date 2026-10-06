@@ -187,14 +187,7 @@ export function AssessmentCreationForm({
         await api.startAssessment(created.assessment_id);
       } catch (startErr: any) {
         setLoading(false);
-        const detail = startErr?.response?.data?.detail;
-        const reason = detail
-          ? String(detail)
-          : startErr?.code === 'ECONNABORTED'
-            ? 'the request timed out (the run may still be in progress)'
-            : startErr?.message
-              ? `no response from server (${startErr.message})`
-              : 'unknown error';
+        const reason = startErr?.message || 'unknown error';
         setError(
           `Assessment ${created.assessment_id} was created but could not be started: ` +
             `${reason}. Open it from the dashboard and retry.`
@@ -209,7 +202,7 @@ export function AssessmentCreationForm({
       }
     } catch (err: any) {
       console.error('Failed to create assessment:', err);
-      setError(err?.response?.data?.detail || 'Failed to create assessment');
+      setError(err?.message || 'Failed to create assessment');
     } finally {
       setLoading(false);
     }
