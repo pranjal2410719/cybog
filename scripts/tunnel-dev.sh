@@ -110,6 +110,13 @@ if [[ ! -d "node_modules" ]]; then
     npm ci
 fi
 
+# Kill any previously running Vite dev servers so port 5173 is always available
+if pgrep -f "vite" > /dev/null; then
+    echo "🛑  Stopping any previously‑running Vite server …"
+    pkill -f "vite" 2>/dev/null || true
+    sleep 1
+fi
+
 # Vite runs in foreground; when you stop the script the frontend also stops.
 npm run dev
 # When you exit the script (Ctrl‑C) the backend server will be killed automatically:

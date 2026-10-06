@@ -481,7 +481,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/validator',
-    element: <RoleGuard allowedRoles={[Role.VALIDATOR]} />,
+    element: <RoleGuard allowedRoles={[Role.VALIDATOR, Role.ANALYST]} />,
     errorElement: (
       <ErrorBoundary>
         <RootRoute />

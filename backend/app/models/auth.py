@@ -26,6 +26,7 @@ class Role(str, Enum):
 
     OPERATOR = "OPERATOR"
     VALIDATOR = "VALIDATOR"
+    ANALYST = "ANALYST"
     MANAGEMENT = "MANAGEMENT"
 
 

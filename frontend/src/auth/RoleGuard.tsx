@@ -49,7 +49,7 @@ export function RootRedirect() {
 
   if (user.role === Role.OPERATOR) {
     return <Navigate to="/operator/dashboard" replace />;
-  } else if (user.role === Role.VALIDATOR) {
+  } else if (user.role === Role.VALIDATOR || user.role === Role.ANALYST) {
     return <Navigate to="/validator/queue" replace />;
   } else if (user.role === Role.MANAGEMENT) {
     return <Navigate to="/management/users" replace />;
