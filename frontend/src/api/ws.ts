@@ -7,6 +7,7 @@
  */
 
 import { wsUrl } from './config';
+import { fetchWsTicket } from './assessments';
 
 export class WebSocketManager {
   private ws: WebSocket | null = null;
@@ -16,36 +17,53 @@ export class WebSocketManager {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectDelay: number = 1000;
+  private closed: boolean = false;
 
   constructor(assessmentId: string) {
     this.assessmentId = assessmentId;
   }
 
   connect(): void {
-    this.ws = new WebSocket(wsUrl(`/ws/assessments/${this.assessmentId}`));
+    this.closed = false;
+    // Every (re)connect mints a fresh single-use ticket: tickets expire
+    // after 60s and are consumed on first use, so reuse is never attempted.
+    fetchWsTicket(this.assessmentId).then(
+      ({ ticket }) => {
+        if (this.closed) return;
+        this.ws = new WebSocket(
+          `${wsUrl(`/ws/assessments/${this.assessmentId}`)}?ticket=${encodeURIComponent(ticket)}`
+        );
 
-    this.ws.onopen = () => {
-      this.reconnectAttempts = 0;
-    };
+        this.ws.onopen = () => {
+          this.reconnectAttempts = 0;
+        };
 
-    this.ws.onmessage = (event) => {
-      try {
-        this.handleMessage(JSON.parse(event.data));
-      } catch {
-        // Ignore malformed messages; keep the socket alive.
+        this.ws.onmessage = (event) => {
+          try {
+            this.handleMessage(JSON.parse(event.data));
+          } catch {
+            // Ignore malformed messages; keep the socket alive.
+          }
+        };
+
+        this.ws.onclose = () => {
+          if (!this.closed) this.attemptReconnect();
+        };
+
+        this.ws.onerror = () => {
+          // onclose will fire after onerror; reconnect logic lives there.
+        };
+      },
+      () => {
+        // Ticket issuance failed (e.g. assessment gone): back off like a
+        // dropped socket instead of spinning.
+        if (!this.closed) this.attemptReconnect();
       }
-    };
-
-    this.ws.onclose = () => {
-      this.attemptReconnect();
-    };
-
-    this.ws.onerror = () => {
-      // onclose will fire after onerror; reconnect logic lives there.
-    };
+    );
   }
 
   disconnect(): void {
+    this.closed = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;

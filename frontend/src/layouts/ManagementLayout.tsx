@@ -10,6 +10,23 @@ function IconUsers({ className = '' }: { className?: string }) {
   );
 }
 
+function IconClipboard({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 11l3 3 3-3M12 2v4m-8 10H2m20 0h-2M6 7h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+function IconSettings({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6" />
+    </svg>
+  );
+}
+
 function NavItem({ to, icon, label, active }: { to: string; icon: React.ReactNode; label: string; active?: boolean }) {
   return (
     <Link
@@ -31,6 +48,8 @@ function ManagementSidebar() {
 
   const nav = [
     { to: '/management/users', label: 'Users', icon: <IconUsers className="w-5 h-5" /> },
+    { to: '/management/audit', label: 'Audit Log', icon: <IconClipboard className="w-5 h-5" /> },
+    { to: '/management/settings', label: 'Settings', icon: <IconSettings className="w-5 h-5" /> },
   ];
 
   return (
@@ -41,7 +60,7 @@ function ManagementSidebar() {
       <p className="px-3 mb-1 text-[12px] text-graphite uppercase tracking-wide">Navigation</p>
       <nav className="flex flex-col gap-0.5">
         {nav.map((item) => (
-          <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} active={location.pathname === item.to} />
+          <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} active={location.pathname.startsWith(item.to)} />
         ))}
       </nav>
     </aside>

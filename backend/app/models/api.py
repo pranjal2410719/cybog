@@ -15,6 +15,26 @@ class AssessmentCreate(BaseModel):
     scope_file: Optional[str] = Field(default=None, description="Path to scope file OR file content")
     target_id: Optional[str] = Field(default=None, description="Registered target ID")
     profile: str = Field(default="standard", description="Pipeline profile")
+    # T6: structured scope. Mutually exclusive with scope_file AND with
+    # target_id (a registry target carries its own domain scope).
+    scope_include: Optional[List[str]] = Field(default=None, description="In-scope patterns")
+    scope_exclude: Optional[List[str]] = Field(default=None, description="Out-of-scope patterns")
+
+
+class ScopePreviewRequest(BaseModel):
+    """Request model for scope preview (pure function, no persistence)."""
+    scope_file: Optional[str] = Field(default=None, description="Scope file content")
+    scope_include: Optional[List[str]] = Field(default=None, description="In-scope patterns")
+    scope_exclude: Optional[List[str]] = Field(default=None, description="Out-of-scope patterns")
+
+
+class ScopePreviewResponse(BaseModel):
+    """Compiled scope preview."""
+    include: List[str]
+    exclude: List[str]
+    compiled: str
+    sha256: str
+    warnings: List[str] = []
 
 class FileUploadResponse(BaseModel):
     """Response model for file upload."""
@@ -45,6 +65,9 @@ class AssessmentResponse(BaseModel):
     progress: Dict[str, Any] = {}
     findings_count: int = 0
     pending_validation_count: int = 0
+    # T5: authorization record (status/confirmed-by/scope hash). Optional so
+    # older states without the record still validate.
+    authorization: Optional[Dict[str, Any]] = None
 
 
 class AssessmentStatusResponse(BaseModel):

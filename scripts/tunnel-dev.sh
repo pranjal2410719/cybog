@@ -59,6 +59,8 @@ echo "✅  SQLite DB ready at $DB_FILE"
 
 # ---------- 5b. Seed default users (idempotent) ----------
 echo "🌱  Seeding default users…"
+# Install security dependencies (argon2, etc.) if not already present
+pip install --upgrade argon2-cffi 2>/dev/null || true
 (cd "${REPO_ROOT}/backend" && PYTHONPATH="${REPO_ROOT}/backend" python -m app.db.seed)
 
 

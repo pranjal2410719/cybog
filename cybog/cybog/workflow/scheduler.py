@@ -44,6 +44,8 @@ from cybog.workers.pool import WorkerPool
 from cybog.workflow.nodes import run_stage_node
 from cybog.workflow.router import PipelineRouter
 from cybog.logging_setup import ContextLogger
+from cybog.profiles import STANDARD_STAGES
+from cybog.scope.admission import AssetClass, classify_asset, host_of_url, partition
 
 
 STAGES_ORDER = [
@@ -65,10 +67,21 @@ class JobScheduler:
         config: CybogConfig,
         state: AssessmentState,
         artifact_mgr: ArtifactManager,
+        enabled_stages: Optional[set[str]] = None,
+        profile_name: str = "standard",
     ):
         self.config = config
         self.state = state
         self.artifact_mgr = artifact_mgr
+        # T8: profile stage gating. None means the full pipeline (backward
+        # compatible for direct scheduler use). Disabled stages never
+        # receive jobs; their loops drain immediately and downstream
+        # completion checks treat the recorded SKIPPED rows as done.
+        self.enabled_stages: set[str] = (
+            set(enabled_stages) if enabled_stages is not None
+            else set(STANDARD_STAGES)
+        )
+        self.profile_name = profile_name
         self._log = ContextLogger(
             "workflow.scheduler",
             assessment_id=state.assessment.assessment_id,
@@ -326,6 +339,33 @@ class JobScheduler:
             # downstream stage loop from concluding the pipeline is drained.
             self._inflight = max(0, self._inflight - 1)
 
+    async def _gate_stage(
+        self,
+        target_id: str,
+        job: StageJob,
+        stage: str,
+        router_run: bool,
+        router_reason: str,
+    ) -> tuple[bool, str]:
+        """
+        Apply the profile stage set to a router decision (T8).
+
+        Profile-enabled stages pass through untouched. Excluded stages get
+        exactly one SKIPPED row here with the profile reason, then chaining
+        is driven explicitly: downstream stages must not stall waiting for
+        a completion event that will never come. Recursion terminates
+        because each call advances to a downstream stage and ``nuclei``
+        (terminal) never recurses.
+        """
+        if stage in self.enabled_stages:
+            return router_run, router_reason
+        reason = f"excluded by profile '{self.profile_name}'"
+        self._skip_downstream(target_id, job, [stage], reason=reason)
+        self._log.info(f"Skipping {stage}: {reason}", target_id=target_id)
+        if stage != "nuclei":
+            await self._enqueue_next_stages(stage, job)
+        return False, reason
+
     async def _enqueue_next_stages(self, completed_stage: str, job: StageJob) -> None:
         """Dependency-aware next-stage enqueueing after a stage completes or is skipped."""
         target_id = job.target_id
@@ -333,6 +373,8 @@ class JobScheduler:
 
         if completed_stage == "subfinder":
             should_run, reason = router.should_run_dnsx(self.state, target_id)
+            should_run, reason = await self._gate_stage(
+                target_id, job, "dnsx", should_run, reason)
             if should_run:
                 await self._enqueue(target_id, job.target_domain, "dnsx")
             else:
@@ -343,6 +385,8 @@ class JobScheduler:
         elif completed_stage == "dnsx":
             run_httpx, r1 = router.should_run_httpx(self.state, target_id)
             run_naabu, r2 = router.should_run_naabu(self.state, target_id)
+            run_httpx, r1 = await self._gate_stage(target_id, job, "httpx", run_httpx, r1)
+            run_naabu, r2 = await self._gate_stage(target_id, job, "naabu", run_naabu, r2)
             if run_httpx:
                 await self._enqueue(target_id, job.target_domain, "httpx")
             else:
@@ -364,13 +408,20 @@ class JobScheduler:
                          self._is_skipped(target_id, "naabu")
 
             if httpx_done and naabu_done:
-                run_katana, r1 = router.should_run_katana(self.state, target_id)
-                run_ffuf, r2 = router.should_run_ffuf(self.state, target_id)
+                router_katana, r1 = router.should_run_katana(self.state, target_id)
+                router_ffuf, r2 = router.should_run_ffuf(self.state, target_id)
+                run_katana, r1 = await self._gate_stage(
+                    target_id, job, "katana", router_katana, r1)
+                run_ffuf, r2 = await self._gate_stage(
+                    target_id, job, "ffuf", router_ffuf, r2)
                 if run_katana:
                     await self._enqueue(target_id, job.target_domain, "katana")
                 if run_ffuf:
                     await self._enqueue(target_id, job.target_domain, "ffuf")
-                if not run_katana and not run_ffuf:
+                # Bulk decision uses the ROUTER values: profile exclusions
+                # already recorded their own rows (keep-first) above, and
+                # must not gain a second row here.
+                if not router_katana and not router_ffuf:
                     self._skip_downstream(
                         target_id, job,
                         ["katana", "ffuf", "nuclei"],
@@ -388,6 +439,8 @@ class JobScheduler:
 
             if katana_done and ffuf_done:
                 run_nuclei, reason = router.should_run_nuclei(self.state, target_id)
+                run_nuclei, reason = await self._gate_stage(
+                    target_id, job, "nuclei", run_nuclei, reason)
                 if run_nuclei:
                     await self._enqueue(target_id, job.target_domain, "nuclei")
                 else:
@@ -417,17 +470,47 @@ class JobScheduler:
     # Helper methods
     # ------------------------------------------------------------------
     def _build_context(self, target_id: str, stage: str) -> dict:
-        """Build the context dict for an adapter based on current state."""
-        subfinder_hosts = [h.hostname for h in self.state.hosts.get(target_id, [])]
-        dnsx_hosts = [
-            h.hostname for h in self.state.hosts.get(target_id, [])
-            if h.ips
-        ]
+        """
+        Build the context dict for an adapter based on current state.
+
+        T9: every stage except subfinder (whose seeds were admitted by the
+        create-time gate) receives only scope-admitted inputs. Refused
+        discoveries are recorded on the assessment for transparency and
+        never reach a scanner.
+        """
+        hosts = [h.hostname for h in self.state.hosts.get(target_id, [])]
+        resolved = {
+            h.hostname for h in self.state.hosts.get(target_id, []) if h.ips
+        }
+        live_urls = self.state.get_live_urls_for_target(target_id)
+        all_urls = self.state.get_all_urls_for_target(target_id)
+
+        scope = self.state.assessment.scope
+        if scope is not None and stage != "subfinder":
+            hosts, refused = partition(hosts, scope)
+            for value, classification, reason in refused:
+                self.state.record_out_of_scope(
+                    value, "asset", classification.value, reason, stage
+                )
+            kept_urls = []
+            for url in all_urls:
+                host = host_of_url(url)
+                classification, reason = classify_asset(host or url, scope)
+                if classification == AssetClass.IN_SCOPE:
+                    kept_urls.append(url)
+                else:
+                    self.state.record_out_of_scope(
+                        host or url, "url", classification.value, reason, stage
+                    )
+            kept = set(kept_urls)
+            live_urls = [u for u in live_urls if u in kept]
+            all_urls = kept_urls
+
         return {
-            "subfinder_hosts": subfinder_hosts,
-            "dnsx_hosts": dnsx_hosts,
-            "httpx_urls": self.state.get_live_urls_for_target(target_id),
-            "all_urls": self.state.get_all_urls_for_target(target_id),
+            "subfinder_hosts": hosts,
+            "dnsx_hosts": [h for h in hosts if h in resolved],
+            "httpx_urls": live_urls,
+            "all_urls": all_urls,
         }
 
     async def _enqueue(self, target_id: str, domain: str, stage: str) -> None:
@@ -462,6 +545,10 @@ class JobScheduler:
 
     def _skip_downstream(self, target_id: str, job: StageJob, stages: list[str], reason: str = "Upstream stage produced 0 results") -> None:
         for s in stages:
+            if self.state.get_job_for_stage(target_id, s) is not None:
+                # Already recorded (e.g. a profile exclusion with its own
+                # reason): keep the first row, never duplicate or overwrite.
+                continue
             skip_job = StageJob(
                 assessment_id=job.assessment_id,
                 target_id=target_id,

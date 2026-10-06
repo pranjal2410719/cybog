@@ -9,10 +9,8 @@ Provides:
 from __future__ import annotations
 
 import json
-import os
 import threading
 import secrets
-import string
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -26,8 +24,11 @@ AUDIT_LOG_PATH = Path(__file__).resolve().parents[1] / "data" / "audit_log.json"
 
 def generate_uid(role: Role) -> str:
     """
-    Generate a secure UID (e.g., op_ + 20 random chars).
+    Generate a secure UID: role prefix + 128 bits of randomness (hex).
+
     Prefix is just a namespace convention. DB must be source of truth.
+    Used by user provisioning (POST /users); preserved from the original
+    ``op_0001``-style convention, upgraded from 32-bit to 128-bit entropy.
     """
     prefix_map = {
         Role.OPERATOR: "op_",
@@ -35,9 +36,7 @@ def generate_uid(role: Role) -> str:
         Role.MANAGEMENT: "mg_"
     }
     prefix = prefix_map.get(role, "usr_")
-    chars = string.ascii_uppercase + string.digits
-    random_part = "".join(secrets.choice(chars) for _ in range(20))
-    return f"{prefix}{random_part}"
+    return f"{prefix}{secrets.token_hex(16)}"
 
 
 class AuditLog:

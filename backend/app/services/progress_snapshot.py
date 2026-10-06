@@ -204,6 +204,9 @@ def build_progress_snapshot(
         "is_terminal": status in TERMINAL_ASSESSMENT_STATUSES,
         "timestamp": _now_iso(),
         "last_updated": _iso(state.last_updated),
+        # Monotonic persistence version (T4): clients discard snapshots and
+        # WS events with a version at or below the one already applied.
+        "state_version": getattr(state, "version", 0),
         # Kept for backwards compatibility with the existing /status and
         # /progress responses.
         "progress": {
@@ -243,6 +246,9 @@ def build_progress_snapshot(
         ),
         "findings_count": len(state.findings),
         "pending_validation_count": state.pending_validation_count(),
+        # T9: discovered-but-refused counts for the "N discovered — M in
+        # scope, K out of scope" workspace display.
+        "out_of_scope_count": state.out_of_scope_count(),
         "created_at": _iso(state.assessment.created_at),
         "updated_at": _iso(getattr(state.assessment, "updated_at", None))
         or _iso(state.last_updated),
@@ -268,6 +274,7 @@ def not_found_snapshot(assessment_id: str) -> Dict[str, Any]:
         "is_terminal": True,
         "timestamp": _now_iso(),
         "error": f"No state found for assessment: {assessment_id}",
+        "state_version": None,
         "targets": [],
         "stages": [],
         "jobs": [],

@@ -7,7 +7,6 @@
 export enum Role {
   OPERATOR = "OPERATOR",
   VALIDATOR = "VALIDATOR",
-  ANALYST = "ANALYST",
   MANAGEMENT = "MANAGEMENT",
 }
 
@@ -59,6 +58,18 @@ export interface AssessmentResponse {
   progress: AssessmentProgress;
   findings_count: number;
   pending_validation_count: number;
+  /**
+   * T5 authorization record. Absent on pre-T5 states; CREATED assessments
+   * carry status PENDING until the owner confirms.
+   */
+  authorization?: {
+    required: boolean;
+    status: string;
+    confirmed: boolean;
+    authorized_by_user_id?: string | null;
+    authorized_at?: string | null;
+    scope_sha256?: string | null;
+  } | null;
 }
 
 /**
@@ -93,6 +104,8 @@ export interface ProgressSnapshot {
   updated_at: string;
   partial_failure: boolean;
   failed_stages: string[];
+  /** Monotonic persistence version (T4). T15 reconcile discards stale snapshots. */
+  state_version?: number | null;
 }
 
 export interface LiveTarget {

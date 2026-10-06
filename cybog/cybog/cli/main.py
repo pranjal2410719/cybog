@@ -38,7 +38,7 @@ err_console = Console(stderr=True, style="bold red")
 def cmd_create(
     targets: str = typer.Option(..., "--targets", "-t", help="Path to targets .txt file"),
     scope: str = typer.Option(..., "--scope", "-s", help="Path to authorized_scope.txt"),
-    profile: str = typer.Option("standard", "--profile", "-p", help="Pipeline profile: standard|quick"),
+    profile: str = typer.Option("standard", "--profile", "-p", help="Pipeline profile: standard|quick|full"),
     config_file: str = typer.Option("config.yaml", "--config", "-c", help="Config file path"),
     output_root: Optional[str] = typer.Option(None, "--output", help="Override output root dir"),
 ):
@@ -332,6 +332,26 @@ def cmd_pending(
         )
         if p["url"]:
             console.print(f"      [dim]{p['url']}[/dim]")
+
+
+@app.command("authorize")
+def cmd_authorize(
+    assessment_id: str = typer.Argument(...),
+    actor: str = typer.Option("cli", "--actor", help="Human confirming authorization"),
+    config_file: str = typer.Option("config.yaml", "--config", "-c"),
+):
+    """Record human authorization (required before execute/resume)."""
+    from cybog.services.assessment_service import AssessmentService
+    cfg = _load_cfg(config_file)
+    svc = AssessmentService(cfg)
+    try:
+        state = svc.confirm_authorization(assessment_id, actor)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    auth = state.assessment.authorization
+    sha = (auth.scope_sha256 or "")[:16]
+    console.print(f"[green]Authorized {assessment_id}[/green] by {actor} (scope sha256: {sha}…)")
 
 
 @app.command("confirm")

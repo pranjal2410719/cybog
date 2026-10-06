@@ -18,6 +18,7 @@ import * as findings from './findings';
 import * as validation from './validation';
 import * as reports from './reports';
 import * as exportApi from './export';
+import * as audit from './audit';
 import { WebSocketManager } from './ws';
 
 export const api = {
@@ -26,6 +27,7 @@ export const api = {
   ...validation,
   ...reports,
   ...exportApi,
+  ...audit,
 };
 
 export { axiosInstance, WebSocketManager };
@@ -44,3 +46,5 @@ export type {
   ProgressUpdate,
   FindingUpdate,
 } from '../lib/models';
+
+export type { AuditEvent, AuditEventType } from './audit';

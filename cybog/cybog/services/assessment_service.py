@@ -6,8 +6,9 @@ Wires together: config, scope, ingestion, state, artifacts, scheduler, reporters
 CLI commands call ONLY this service. No business logic in CLI.
 """
 from __future__ import annotations
-
+import hashlib
 import json
+
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -15,10 +16,17 @@ from typing import Optional
 from cybog.artifacts.manager import ArtifactManager
 from cybog.config.models import CybogConfig
 from cybog.ingestion.manifest import TargetManifestLoader
-from cybog.models.assessment import Assessment, AssessmentStatus, Authorization, AuthorizationStatus
+from cybog.models.assessment import (
+    Assessment,
+    AssessmentStatus,
+    Authorization,
+    AuthorizationStatus,
+    Scope,
+)
 from cybog.models.finding import Evidence, InvalidTransitionError, ValidationStatus
 from cybog.models.job import JobStatus
 from cybog.models.target import TargetStatus
+from cybog.profiles import apply_profile, stages_for, validate_profile
 from cybog.queue.analyst_queue import AnalystTaskStatus
 from cybog.scope.validator import ScopeValidator
 from cybog.state.assessment_state import AssessmentState
@@ -49,6 +57,8 @@ class AssessmentService:
           3. Filter targets by scope (hard gate).
           4. Create AssessmentState and persist.
         """
+        # T8: fail fast on unknown profiles (typos must not silently run).
+        validate_profile(profile)
         # 1. Scope validation
         scope_validator = ScopeValidator(scope_file)
         scope = scope_validator.load_scope()
@@ -56,7 +66,10 @@ class AssessmentService:
             f"Scope loaded: {len(scope.patterns)} patterns from {scope_file}"
         )
 
-        # 2. Build assessment
+        # 2. Build assessment. Authorization starts PENDING: the scope gate
+        # above proves the scope file is valid, but only an explicit human
+        # confirmation (confirm_authorization) may set AUTHORIZED. Execution
+        # refuses anything else (require_authorized).
         assessment = Assessment(
             profile=profile,
             name=name,
@@ -66,7 +79,7 @@ class AssessmentService:
             authorization=Authorization(
                 required=True,
                 scope_file=scope_file,
-                status=AuthorizationStatus.AUTHORIZED,
+                status=AuthorizationStatus.PENDING,
                 authorized_patterns=scope.patterns,
             ),
             scope=scope,
@@ -136,6 +149,81 @@ class AssessmentService:
         return state
 
     # ------------------------------------------------------------------
+    # authorization
+    # ------------------------------------------------------------------
+    @staticmethod
+    def scope_snapshot(
+        scope: Optional[Scope], state: AssessmentState
+    ) -> tuple[dict, str]:
+        """
+        Canonical rendering of the authorized scope + admitted targets.
+
+        Returns (snapshot, sha256). The digest is pinned on the
+        Authorization record at confirmation time; execution admission (T9)
+        enforces the pinned snapshot, never live inputs.
+        """
+        snapshot = {
+            "include": sorted(scope.patterns) if scope else [],
+            "exclude": sorted(scope.explicit_excludes) if scope else [],
+            "targets": sorted(t.domain for t in state.targets.values()),
+        }
+        digest = hashlib.sha256(
+            json.dumps(snapshot, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        return snapshot, digest
+
+    @staticmethod
+    def require_authorized(state: AssessmentState) -> None:
+        """Refuse execution for assessments without human authorization."""
+        auth = state.assessment.authorization
+        if not auth or auth.status != AuthorizationStatus.AUTHORIZED:
+            raise ValueError(
+                f"Assessment {state.assessment.assessment_id} has not been "
+                f"human-authorized. Confirm authorization before starting."
+            )
+
+    def confirm_authorization(
+        self, assessment_id: str, actor_user_id: str
+    ) -> AssessmentState:
+        """
+        Record explicit human authorization (T5: blocking pre-execution step).
+
+        Allowed only while the assessment is CREATED: once execution begins,
+        target/scope are frozen and re-confirmation is rejected. Re-confirming
+        an already-authorized CREATED assessment is idempotent.
+        """
+        state = self.load_state(assessment_id)
+        a = state.assessment
+        if a.status != AssessmentStatus.CREATED:
+            raise ValueError(
+                f"Assessment {assessment_id} scope/authorization is frozen "
+                f"(status {a.status.value}). Authorization can only be "
+                f"confirmed before execution begins."
+            )
+        auth = a.authorization or Authorization(
+            required=True,
+            scope_file=a.scope_file,
+            status=AuthorizationStatus.PENDING,
+        )
+        snapshot, digest = self.scope_snapshot(a.scope, state)
+        if auth.status == AuthorizationStatus.AUTHORIZED and auth.scope_sha256 == digest:
+            return state  # idempotent retry: same scope, nothing to do
+        auth.status = AuthorizationStatus.AUTHORIZED
+        auth.authorized_at = datetime.now(timezone.utc)
+        auth.authorized_by_user_id = actor_user_id
+        auth.authorized_patterns = list(a.scope.patterns) if a.scope else []
+        auth.scope_snapshot = snapshot
+        auth.scope_sha256 = digest
+        a.authorization = auth
+        art_mgr = ArtifactManager(self.config.output.root, assessment_id)
+        state.save(art_mgr.state_path())
+        self._log.info(
+            f"Authorization confirmed for {assessment_id} by {actor_user_id} "
+            f"(scope sha256: {digest[:16]}…)"
+        )
+        return state
+
+    # ------------------------------------------------------------------
     # execute
     # ------------------------------------------------------------------
     async def execute(self, assessment_id: str) -> AssessmentState:
@@ -145,6 +233,8 @@ class AssessmentService:
 
         if state.assessment.status == AssessmentStatus.CANCELLED:
             raise ValueError(f"Assessment {assessment_id} is CANCELLED. Cannot execute.")
+
+        self.require_authorized(state)
 
         state.assessment.status = AssessmentStatus.RUNNING
         state.assessment.started_at = datetime.now(timezone.utc)
@@ -161,7 +251,16 @@ class AssessmentService:
         )
 
         from cybog.services.executor import AssessmentExecutor
-        executor: AssessmentExecutor = JobScheduler(self.config, state, art_mgr)
+        # T8: resolve the profile to a stage set + tool overrides. The
+        # overrides apply to an independent config copy: the shared loaded
+        # config is never mutated, so concurrent assessments cannot leak
+        # profile settings into each other.
+        run_config = apply_profile(self.config, state.assessment.profile)
+        executor: AssessmentExecutor = JobScheduler(
+            run_config, state, art_mgr,
+            enabled_stages=set(stages_for(state.assessment.profile)),
+            profile_name=state.assessment.profile,
+        )
         try:
             await executor.run(targets)
             state.assessment.status = self._terminal_status(state)
@@ -233,6 +332,8 @@ class AssessmentService:
         state = self.load_state(assessment_id)
         art_mgr = ArtifactManager(self.config.output.root, assessment_id)
 
+        self.require_authorized(state)
+
         incomplete = state.get_incomplete_jobs()
         failed = state.get_failed_jobs()
         self._log.info(
@@ -254,7 +355,12 @@ class AssessmentService:
             if t.status in (TargetStatus.IN_SCOPE, TargetStatus.RUNNING)
         ]
         from cybog.services.executor import AssessmentExecutor
-        executor: AssessmentExecutor = JobScheduler(self.config, state, art_mgr)
+        run_config = apply_profile(self.config, state.assessment.profile)
+        executor: AssessmentExecutor = JobScheduler(
+            run_config, state, art_mgr,
+            enabled_stages=set(stages_for(state.assessment.profile)),
+            profile_name=state.assessment.profile,
+        )
         try:
             await executor.run(targets)
             state.assessment.status = self._terminal_status(state)

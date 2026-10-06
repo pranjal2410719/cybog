@@ -205,7 +205,9 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
   const [exportState, setExportState] = useState<ExportState>({ phase: 'idle' });
   const [pendingInfo, setPendingInfo] = useState<number | null>(null);
   const [pendingError, setPendingError] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const live = useLiveStatus(assessmentId);
+  const isAuthorized = assessment?.authorization?.confirmed === true;
 
   const fetchAssessment = useCallback(async () => {
     try {
@@ -247,13 +249,39 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
   }, [assessmentId, fetchAssessment]);
 
   const handleStartAssessment = async () => {
-    try { await api.startAssessment(assessmentId); fetchAssessment(); }
-    catch { setError('Failed to start assessment'); }
+    // T7: preflight is mandatory before start; a NOT READY result surfaces
+    // the reasons and the assessment is never marked running.
+    try {
+      const preflight = await api.preflightAssessment(assessmentId);
+      if (!preflight.ready) {
+        const reasons = preflight.checks
+          .filter((c) => !c.ok)
+          .map((c) => `${c.name}: ${c.detail}`)
+          .join('; ');
+        setError(`Not ready to start: ${reasons}`);
+        fetchAssessment();
+        return;
+      }
+      await api.startAssessment(assessmentId);
+      fetchAssessment();
+    } catch {
+      setError('Failed to start assessment');
+    }
   };
 
   const handleResumeAssessment = async () => {
     try { await api.resumeAssessment(assessmentId); fetchAssessment(); }
     catch { setError('Failed to resume assessment'); }
+  };
+
+  const handleAuthorizeAssessment = async () => {
+    try {
+      await api.authorizeAssessment(assessmentId);
+      setAuthChecked(false);
+      fetchAssessment();
+    } catch {
+      setError('Failed to confirm authorization');
+    }
   };
 
   const handleBack = () => { if (onBack) onBack(); else window.location.href = '/'; };
@@ -437,13 +465,32 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
 
       {/* ── Actions ── */}
       {assessment && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {assessment.status === 'CREATED' && !isAuthorized && (
+            <>
+              <label className="flex items-center gap-2 text-[13px] text-ink w-full mb-1">
+                <input
+                  type="checkbox"
+                  checked={authChecked}
+                  onChange={(e) => setAuthChecked(e.target.checked)}
+                />
+                <span>I confirm that I am authorized to assess this target and scope.</span>
+              </label>
+              <ActionBtn
+                onClick={handleAuthorizeAssessment}
+                disabled={!authChecked}
+                variant="ink"
+              >
+                Confirm Authorization
+              </ActionBtn>
+            </>
+          )}
           <ActionBtn
             onClick={handleStartAssessment}
-            disabled={assessment.status !== 'CREATED'}
+            disabled={!['CREATED', 'READY'].includes(assessment.status)}
             variant="ink"
           >
-            Start
+            {assessment.status === 'CREATED' && !isAuthorized ? 'Start (authorize first)' : 'Start'}
           </ActionBtn>
           <ActionBtn
             onClick={handleResumeAssessment}

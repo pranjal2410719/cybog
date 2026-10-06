@@ -16,9 +16,20 @@ from typing import Any, Dict, List
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.api.auth_routes import get_db as get_db_dep
+from app.db.base import Base
+from app.db.models import DBUser
+from app.models.auth import Role
 from cybog.config.loader import load_config
-from cybog.models.assessment import Assessment, AssessmentStatus
+from cybog.models.assessment import (
+    Assessment,
+    AssessmentStatus,
+    Authorization,
+    AuthorizationStatus,
+)
 from cybog.models.finding import Finding, Severity, ValidationStatus
 from cybog.models.job import JobStatus, StageJob
 from cybog.models.target import Target, TargetStatus
@@ -91,6 +102,7 @@ def _write_state(
     targets: List[Target] | None = None,
     jobs: List[StageJob] | None = None,
     findings: List[Finding] | None = None,
+    authorized: bool = False,
 ) -> Path:
     """Persist a real AssessmentState at <root>/<assessment_id>/state.json."""
     assessment = Assessment(
@@ -104,6 +116,19 @@ def _write_state(
         artifact_root=str(root / assessment_id),
         config_snapshot={},
     )
+    if authorized:
+        # T5: execution requires a confirmed Authorization record.
+        assessment.authorization = Authorization(
+            required=True,
+            scope_file="authorized_scope.txt",
+            status=AuthorizationStatus.AUTHORIZED,
+            authorized_at=datetime(2026, 1, 1, 12, 0, 6),
+            authorized_by_user_id="test-internal-id",
+            authorized_patterns=["one.example.com"],
+            scope_snapshot={"include": ["one.example.com"], "exclude": [],
+                            "targets": ["one.example.com"]},
+            scope_sha256="f" * 64,
+        )
     state = AssessmentState.create_new(assessment)
     for target in targets or []:
         state.add_target(target)
@@ -151,6 +176,49 @@ def client(service: CybogIntegrationService):
         yield TestClient(fastapi_app)
     finally:
         fastapi_app.dependency_overrides.pop(routes.get_cybog_service, None)
+
+
+@pytest.fixture
+def ws_auth_db():
+    """In-memory users DB containing the conftest mock identity.
+
+    The WS handshake resolves the ticket's user_id against get_db, so
+    tests that open real sockets need this override (scoped + restored).
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _setup():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with maker() as session:
+            session.add(DBUser(
+                id="test-internal-id", uid="op_12345", name="Test User",
+                role=Role.OPERATOR, active=True,
+            ))
+            await session.commit()
+
+    asyncio.run(_setup())
+
+    async def _override():
+        async with maker() as session:
+            yield session
+
+    prev = fastapi_app.dependency_overrides.get(get_db_dep)
+    fastapi_app.dependency_overrides[get_db_dep] = _override
+    try:
+        yield
+    finally:
+        if prev is not None:
+            fastapi_app.dependency_overrides[get_db_dep] = prev
+        else:
+            fastapi_app.dependency_overrides.pop(get_db_dep, None)
+
+        async def _teardown():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+
+        asyncio.run(_teardown())
 
 
 @pytest.fixture
@@ -364,7 +432,9 @@ def test_missing_assessment_returns_404_not_500(client):
     """A non-existent assessment yields a clean 404 over REST."""
     response = client.get("/api/v1/assessments/does-not-exist/progress")
     assert response.status_code == 404
-    assert "does-not-exist" in response.json()["detail"]
+    # Frozen R2: the detail omits the id so denied-but-existing and
+    # genuinely-missing are indistinguishable (no existence oracle).
+    assert response.json()["detail"] == "Assessment not found"
 
     status_response = client.get("/api/v1/assessments/does-not-exist/status")
     assert status_response.status_code == 404
@@ -374,7 +444,7 @@ def test_missing_assessment_returns_404_not_500(client):
 # 4. WebSocket delivery
 # ----------------------------------------------------------------------
 def test_websocket_client_receives_real_progress_message(
-    monkeypatch, service, output_root
+    monkeypatch, service, output_root, ws_auth_db
 ):
     """A connected client receives a progress message with the real id+status."""
     aid = "assess-ws"
@@ -386,12 +456,21 @@ def test_websocket_client_receives_real_progress_message(
         jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.RUNNING, 0)],
     )
     monkeypatch.setattr(main_module, "get_cybog_service", lambda: service)
+    fastapi_app.dependency_overrides[routes.get_cybog_service] = lambda: service
+    try:
+        # T3: the handshake needs a ticket minted over REST first.
+        with TestClient(fastapi_app) as rest_client:
+            resp = rest_client.post(f"/api/v1/assessments/{aid}/ws-ticket")
+            assert resp.status_code == 200, resp.text
+            ticket = resp.json()["ticket"]
+    finally:
+        fastapi_app.dependency_overrides.pop(routes.get_cybog_service, None)
 
     received: List[Dict[str, Any]] = []
 
     def interact() -> None:
         with TestClient(fastapi_app) as ws_client:
-            with ws_client.websocket_connect(f"/ws/assessments/{aid}") as ws:
+            with ws_client.websocket_connect(f"/ws/assessments/{aid}?ticket={ticket}") as ws:
                 for _ in range(2):
                     received.append(ws.receive_json())
 
@@ -495,9 +574,10 @@ def test_start_returns_202_and_registers_task(client, output_root, service, monk
     _write_state(
         output_root,
         aid,
-        status=AssessmentStatus.CREATED,
+        status=AssessmentStatus.READY,
         targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
         jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+        authorized=True,
     )
 
     async def _fake_execute(execution_aid: str) -> AssessmentState:
@@ -526,9 +606,10 @@ def test_duplicate_start_returns_already_running(client, output_root, service, m
     _write_state(
         output_root,
         aid,
-        status=AssessmentStatus.CREATED,
+        status=AssessmentStatus.READY,
         targets=[Target(target_id="t-1", domain="one.example.com", status=TargetStatus.IN_SCOPE)],
         jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
+        authorized=True,
     )
 
     async def _fake_execute(execution_aid: str) -> AssessmentState:
@@ -563,6 +644,7 @@ def test_resume_returns_202_and_registers_task(client, output_root, service, mon
             _make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.FAILED),
             _make_job(aid, "t-1", "one.example.com", "dnsx", JobStatus.PENDING),
         ],
+        authorized=True,
     )
 
     async def _fake_resume(execution_aid: str) -> AssessmentState:
@@ -590,7 +672,7 @@ def test_start_missing_assessment_returns_404(client):
     with TestClient(fastapi_app) as fresh_client:
         response = fresh_client.post("/api/v1/assessments/does-not-exist/start")
     assert response.status_code == 404
-    assert "does-not-exist" in response.json()["detail"]
+    assert response.json()["detail"] == "Assessment not found"
 
 
 def test_start_cancelled_assessment_returns_400(client, output_root):
@@ -611,7 +693,7 @@ def test_start_cancelled_assessment_returns_400(client, output_root):
 
 
 def test_websocket_receives_progress_after_background_start(
-    monkeypatch, service, output_root, connected
+    monkeypatch, service, output_root, connected, ws_auth_db
 ):
     """A WebSocket client receives real progress after a background start."""
     aid = "assess-ws-bg"
@@ -623,12 +705,20 @@ def test_websocket_receives_progress_after_background_start(
         jobs=[_make_job(aid, "t-1", "one.example.com", "subfinder", JobStatus.PENDING)],
     )
     monkeypatch.setattr(main_module, "get_cybog_service", lambda: service)
+    fastapi_app.dependency_overrides[routes.get_cybog_service] = lambda: service
+    try:
+        with TestClient(fastapi_app) as rest_client:
+            resp = rest_client.post(f"/api/v1/assessments/{aid}/ws-ticket")
+            assert resp.status_code == 200, resp.text
+            ticket = resp.json()["ticket"]
+    finally:
+        fastapi_app.dependency_overrides.pop(routes.get_cybog_service, None)
 
     received: List[Dict[str, Any]] = []
 
     def interact() -> None:
         with TestClient(fastapi_app) as ws_client:
-            with ws_client.websocket_connect(f"/ws/assessments/{aid}") as ws:
+            with ws_client.websocket_connect(f"/ws/assessments/{aid}?ticket={ticket}") as ws:
                 for _ in range(2):
                     received.append(ws.receive_json())
 

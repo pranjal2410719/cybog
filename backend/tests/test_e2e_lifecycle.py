@@ -14,13 +14,12 @@ from app.db.models import DBUser
 from app.models.auth import Role, AuditEvent
 from app.api.auth_routes import get_db, get_current_user
 from app.config import settings
+from app.services.passwords import hash_password
 
 # For direct state manipulation
 from cybog.models.assessment import Assessment, AssessmentStatus
 from cybog.models.finding import Finding, Severity, ValidationStatus
 from cybog.state.assessment_state import AssessmentState
-
-app.dependency_overrides.pop(get_current_user, None)
 
 pytestmark = pytest.mark.asyncio
 
@@ -35,7 +34,28 @@ async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
     async with TestingSessionLocal() as session:
         yield session
 
-app.dependency_overrides[get_db] = override_get_db
+
+@pytest.fixture(autouse=True)
+def _scoped_auth_overrides():
+    """Exercise real auth + an isolated DB for this module only.
+
+    The overrides are applied per-test and restored afterwards so other
+    test modules (which rely on conftest's auth mock) are unaffected by
+    import or execution order.
+    """
+    prev_user = app.dependency_overrides.pop(get_current_user, None)
+    prev_db = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield
+    finally:
+        if prev_db is not None:
+            app.dependency_overrides[get_db] = prev_db
+        else:
+            app.dependency_overrides.pop(get_db, None)
+        if prev_user is not None:
+            app.dependency_overrides[get_current_user] = prev_user
+
 
 @pytest.fixture(autouse=True)
 async def setup_db():
@@ -57,24 +77,28 @@ def client(tmp_output):
 
 async def seed_users():
     async with TestingSessionLocal() as session:
-        op = DBUser(id="op-uuid", uid="op_123", name="Op", role=Role.OPERATOR, active=True)
-        op2 = DBUser(id="op2-uuid", uid="op_456", name="Op2", role=Role.OPERATOR, active=True)
-        val = DBUser(id="val-uuid", uid="val_123", name="Val", role=Role.VALIDATOR, active=True)
-        mg = DBUser(id="mg-uuid", uid="mg_123", name="Mgmt", role=Role.MANAGEMENT, active=True)
+        op = DBUser(id="op-uuid", uid="op_123", name="Op", role=Role.OPERATOR, active=True,
+                    password_hash=hash_password("e2e-op-password-1"))
+        op2 = DBUser(id="op2-uuid", uid="op_456", name="Op2", role=Role.OPERATOR, active=True,
+                     password_hash=hash_password("e2e-op2-password-2"))
+        val = DBUser(id="val-uuid", uid="val_123", name="Val", role=Role.VALIDATOR, active=True,
+                     password_hash=hash_password("e2e-val-password-3"))
+        mg = DBUser(id="mg-uuid", uid="mg_123", name="Mgmt", role=Role.MANAGEMENT, active=True,
+                    password_hash=hash_password("e2e-mg-password-4"))
         session.add_all([op, op2, val, mg])
         await session.commit()
 
-async def get_token(client, uid):
-    res = client.post("/api/v1/auth/login", json={"uid": uid})
+async def get_token(client, uid, password):
+    res = client.post("/api/v1/auth/login", json={"uid": uid, "password": password})
     return res.json()["token"]
 
 async def test_e2e_lifecycle(client, tmp_output: Path):
     await seed_users()
     
-    op_token = await get_token(client, "op_123")
-    op2_token = await get_token(client, "op_456")
-    val_token = await get_token(client, "val_123")
-    mg_token = await get_token(client, "mg_123")
+    op_token = await get_token(client, "op_123", "e2e-op-password-1")
+    op2_token = await get_token(client, "op_456", "e2e-op2-password-2")
+    val_token = await get_token(client, "val_123", "e2e-val-password-3")
+    mg_token = await get_token(client, "mg_123", "e2e-mg-password-4")
 
     op_hdr = {"Authorization": f"Bearer {op_token}"}
     op2_hdr = {"Authorization": f"Bearer {op2_token}"}
@@ -150,9 +174,10 @@ async def test_e2e_lifecycle(client, tmp_output: Path):
 
     # 5. Download Authorization and Formats
     for filename in ["report_verified.json", "report_verified.html", "report_verified.pdf", "findings_verified.jsonl", "report.pdf", "report.json"]:
-        # Operator 2 tries to download (403)
+        # Operator 2 tries to download (404: cross-tenant reads are
+        # indistinguishable from missing resources, frozen R2 policy)
         d2 = client.get(f"/api/v1/assessments/{aid}/reports/{filename}", headers=op2_hdr)
-        assert d2.status_code == 403
+        assert d2.status_code == 404
         
         # Operator 1 tries to download (200)
         d1 = client.get(f"/api/v1/assessments/{aid}/reports/{filename}", headers=op_hdr)

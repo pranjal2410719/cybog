@@ -1,32 +1,39 @@
 INFO:     Will watch for changes in these directories: ['/home/dev/Downloads/cybog/backend']
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [505841] using WatchFiles
-INFO:     Started server process [505846]
+INFO:     Started reloader process [676412] using WatchFiles
+INFO:     Started server process [676417]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:45158 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54958 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54962 - "GET /api/v1/users HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54964 - "GET /api/v1/users HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54746 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54760 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54768 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54782 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54792 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40416 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40420 - "GET /api/v1/users HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40434 - "GET /api/v1/users HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48156 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48168 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48178 - "GET /api/v1/assessments/queue/validation/pending HTTP/1.1" 400 Bad Request
-INFO:     127.0.0.1:48192 - "GET /api/v1/assessments/queue/validation/pending HTTP/1.1" 400 Bad Request
-INFO:     127.0.0.1:34144 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:34146 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56350 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56356 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56360 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56370 - "GET /api/v1/assessments HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50610 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50622 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50626 - "GET /api/v1/users HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50628 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55976 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45530 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45544 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45554 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45816 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45820 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45830 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47000 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47012 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47016 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48752 - "GET /api/v1/assessments/assessment-20261003-134628-9e92dcc2/validation/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48756 - "GET /api/v1/assessments/assessment-20261005-104613-bd677cd1/validation/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48770 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59144 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59156 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59164 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33062 - "GET /api/v1/audit/events HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33068 - "GET /api/v1/audit/events HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52628 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52640 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52648 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52664 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52680 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52686 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52690 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52694 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52702 - "GET /api/v1/audit/events?assessment_id=assessment-20261005-184156-5af7258f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41390 - "GET /api/v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41392 - "GET /api/v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41396 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56380 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56394 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56410 - "GET /api/v1/users HTTP/1.1" 200 OK

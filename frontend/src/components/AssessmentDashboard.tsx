@@ -16,6 +16,8 @@ import type { AssessmentResponse } from '../lib/models';
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
   CREATED:              { bg: '#e8e5e0', text: '#72706b' },
+  READY:                { bg: '#e3f2f0', text: '#016a71' },
+  QUEUED:               { bg: '#ede8f8', text: '#6d4fc9' },
   RUNNING:              { bg: 'color-mix(in oklch, #016a71 15%, #faf8f5)', text: '#016a71' },
   COMPLETED:            { bg: '#e3f2f0', text: '#016a71' },
   FAILED:               { bg: '#fde8e8', text: '#c0392b' },

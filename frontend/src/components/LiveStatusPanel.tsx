@@ -89,9 +89,26 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
       if (closedRef.current) return;
       setConnection(attemptsRef.current === 0 ? 'connecting' : 'reconnecting');
 
+      // Fresh single-use ticket per attempt (T3): tickets expire after 60s
+      // and are consumed on first use, so a 4401 close simply reconnects
+      // with a new ticket on the normal backoff below.
+      api.fetchWsTicket(assessmentId).then(
+        ({ ticket }) => {
+          if (closedRef.current) return;
+          openSocket(ticket);
+        },
+        () => {
+          if (!closedRef.current) scheduleReconnect();
+        }
+      );
+    };
+
+    const openSocket = (ticket: string) => {
       let socket: WebSocket;
       try {
-        socket = new WebSocket(wsUrl(`/ws/assessments/${assessmentId}`));
+        socket = new WebSocket(
+          `${wsUrl(`/ws/assessments/${assessmentId}`)}?ticket=${encodeURIComponent(ticket)}`
+        );
       } catch {
         scheduleReconnect();
         return;

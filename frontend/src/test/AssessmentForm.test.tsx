@@ -11,11 +11,15 @@ import userEvent from '@testing-library/user-event';
 import { AssessmentCreationForm } from '../components/AssessmentForm';
 
 const createAssessment = vi.fn();
+const authorizeAssessment = vi.fn();
+const preflightAssessment = vi.fn();
 const startAssessment = vi.fn();
 
 vi.mock('../api', () => ({
   api: {
     createAssessment: (...args: unknown[]) => createAssessment(...args),
+    authorizeAssessment: (...args: unknown[]) => authorizeAssessment(...args),
+    preflightAssessment: (...args: unknown[]) => preflightAssessment(...args),
     startAssessment: (...args: unknown[]) => startAssessment(...args),
   },
 }));
@@ -23,6 +27,8 @@ vi.mock('../api', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   createAssessment.mockResolvedValue({ assessment_id: 'assess-1' });
+  authorizeAssessment.mockResolvedValue({ assessment_id: 'assess-1', authorized: true });
+  preflightAssessment.mockResolvedValue({ assessment_id: 'assess-1', ready: true, status: 'READY', checks: [] });
   startAssessment.mockResolvedValue({ assessment_id: 'assess-1', status: 'RUNNING' });
 });
 
@@ -113,6 +119,10 @@ describe('bulk target mode', () => {
 });
 
 describe('creation flow', () => {
+  async function confirmAuthorization(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('checkbox', { name: /authorized to perform security testing/i }));
+  }
+
   it('creates then starts the assessment, and reports the new id', async () => {
     const user = userEvent.setup();
     const onCreated = vi.fn();
@@ -120,10 +130,26 @@ describe('creation flow', () => {
 
     await fillName(user);
     await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await confirmAuthorization(user);
     await user.click(screen.getByRole('button', { name: /start assessment/i }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('assess-1'));
+    expect(authorizeAssessment).toHaveBeenCalledWith('assess-1');
+    expect(preflightAssessment).toHaveBeenCalledWith('assess-1');
     expect(startAssessment).toHaveBeenCalledWith('assess-1');
+  });
+
+  it('blocks submit until authorization is confirmed', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await fillName(user);
+    await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await user.click(screen.getByRole('button', { name: /start assessment/i }));
+
+    expect(createAssessment).not.toHaveBeenCalled();
+    expect(authorizeAssessment).not.toHaveBeenCalled();
+    expect(startAssessment).not.toHaveBeenCalled();
   });
 
   /**
@@ -137,6 +163,7 @@ describe('creation flow', () => {
 
     await fillName(user);
     await user.type(screen.getByPlaceholderText(/example\.com/i), 'https://example.com/admin');
+    await confirmAuthorization(user);
     await user.click(screen.getByRole('button', { name: /start assessment/i }));
 
     await waitFor(() => expect(createAssessment).toHaveBeenCalled());
@@ -149,14 +176,51 @@ describe('creation flow', () => {
 
   it('surfaces a create failure and does not start anything', async () => {
     const user = userEvent.setup();
-    createAssessment.mockRejectedValue({ response: { data: { detail: 'scope mismatch' } } });
+    // Shape mirrors the axios interceptor's normalized error (message set
+    // from the backend detail), which is what the component reads.
+    createAssessment.mockRejectedValue({ message: 'scope mismatch' });
     renderForm();
 
     await fillName(user);
     await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await confirmAuthorization(user);
     await user.click(screen.getByRole('button', { name: /start assessment/i }));
 
     expect(await screen.findByText('scope mismatch')).toBeInTheDocument();
+    expect(startAssessment).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an authorize failure and does not start anything', async () => {
+    const user = userEvent.setup();
+    authorizeAssessment.mockRejectedValue({ message: 'frozen' });
+    renderForm();
+
+    await fillName(user);
+    await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await confirmAuthorization(user);
+    await user.click(screen.getByRole('button', { name: /start assessment/i }));
+
+    expect(await screen.findByText(/could not be authorized/i)).toBeInTheDocument();
+    expect(startAssessment).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a NOT READY preflight and does not start anything', async () => {
+    const user = userEvent.setup();
+    preflightAssessment.mockResolvedValue({
+      assessment_id: 'assess-1',
+      ready: false,
+      status: 'CREATED',
+      checks: [{ name: 'toolchain', ok: false, detail: 'nuclei: binary unavailable' }],
+    });
+    renderForm();
+
+    await fillName(user);
+    await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await confirmAuthorization(user);
+    await user.click(screen.getByRole('button', { name: /start assessment/i }));
+
+    expect(await screen.findByText(/not ready/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nuclei: binary unavailable/i)).toBeInTheDocument();
     expect(startAssessment).not.toHaveBeenCalled();
   });
 
@@ -167,6 +231,7 @@ describe('creation flow', () => {
 
     await fillName(user);
     await user.type(screen.getByPlaceholderText(/example\.com/i), 'example.com');
+    await confirmAuthorization(user);
     await user.click(screen.getByRole('button', { name: /start assessment/i }));
 
     expect(await screen.findByText(/was created but could not be started/i)).toBeInTheDocument();

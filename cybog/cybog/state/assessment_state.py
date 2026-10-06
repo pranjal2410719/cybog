@@ -15,7 +15,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from cybog.models.assessment import Assessment
+from cybog.models.assessment import Assessment, OutOfScopeItem
 from cybog.models.target import Target, Host, IP, Port, Service, URL, Endpoint
 from cybog.models.finding import Finding
 from cybog.models.job import StageJob, JobStatus
@@ -41,6 +41,10 @@ class AssessmentState(BaseModel):
     # ── Findings ───────────────────────────────────────────────────────
     findings: dict[str, Finding] = Field(default_factory=dict)  # dedup_key -> Finding
 
+    # Discovered values refused by scope admission (T9): recorded for
+    # visibility, never scanned. Deduplicated by value at record time.
+    out_of_scope: list[OutOfScopeItem] = Field(default_factory=list)
+
     # ── Validation work (human-assisted plane) ─────────────────────────
     analyst_tasks: dict[str, AnalystTask] = Field(default_factory=dict)  # task_id -> AnalystTask
 
@@ -52,6 +56,12 @@ class AssessmentState(BaseModel):
 
     # ── Metadata ──────────────────────────────────────────────────────
     last_updated: datetime = Field(default_factory=datetime.utcnow)
+
+    # ── Concurrency version ──────────────────────────────────────────
+    # Incremented on every save (T4). Snapshots and WS events carry it so
+    # clients can discard stale state (frozen R6/R10). Single-writer
+    # (asyncio) assumed; concurrent processes may interleave versions.
+    version: int = 0
 
     # ------------------------------------------------------------------
     # Target helpers
@@ -145,6 +155,34 @@ class AssessmentState(BaseModel):
             return False
         self.findings[finding.dedup_key] = finding
         return True
+
+    def record_out_of_scope(
+        self,
+        value: str,
+        kind: str,
+        classification: str,
+        reason: str,
+        stage: str,
+    ) -> bool:
+        """
+        Record a refused discovery (T9). Deduplicated by value: the first
+        observation wins. Returns True if newly recorded.
+        """
+        for item in self.out_of_scope:
+            if item.value == value:
+                return False
+        self.out_of_scope.append(OutOfScopeItem(
+            value=value,
+            kind=kind,
+            classification=classification,
+            reason=reason,
+            stage=stage,
+            observed_at=datetime.utcnow(),
+        ))
+        return True
+
+    def out_of_scope_count(self) -> int:
+        return len(self.out_of_scope)
 
     def get_findings_for_target(self, target_id: str) -> list[Finding]:
         return [f for f in self.findings.values() if f.target_id == target_id]
@@ -244,6 +282,9 @@ class AssessmentState(BaseModel):
     def save(self, path: str | Path) -> None:
         """Atomic save: write to .tmp then rename to avoid corruption."""
         self.last_updated = datetime.utcnow()
+        # Increment-then-dump keeps the in-memory object and the file
+        # consistent, so round-trip equality still holds.
+        self.version += 1
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")

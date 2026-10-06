@@ -52,7 +52,7 @@ function OperatorSidebar() {
       <p className="px-3 mb-1 text-[12px] text-graphite uppercase tracking-wide">Navigation</p>
       <nav className="flex flex-col gap-0.5">
         {nav.map((item) => (
-          <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} active={location.pathname === item.to} />
+          <NavItem key={item.to} to={item.to} label={item.label} icon={item.icon} active={location.pathname.startsWith(item.to)} />
         ))}
       </nav>
     </aside>

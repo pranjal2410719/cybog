@@ -1,5 +1,5 @@
 import { axiosInstance } from './client';
-import { User } from '../lib/models';
+import { Role, User } from '../lib/models';
 
 export interface LoginResponse {
   token: string;
@@ -7,8 +7,12 @@ export interface LoginResponse {
 }
 
 export const authApi = {
-  login: async (uid: string): Promise<LoginResponse> => {
-    const response = await axiosInstance.post('/auth/login', { uid });
+  login: async (uid: string, password: string, selectedRole?: Role): Promise<LoginResponse> => {
+    const response = await axiosInstance.post('/auth/login', {
+      uid,
+      password,
+      ...(selectedRole ? { selected_role: selectedRole } : {}),
+    });
     return response.data;
   },
   

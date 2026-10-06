@@ -10,13 +10,20 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, Set, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.api.routes import api_router, get_cybog_service
 from app.api.auth_routes import auth_router
 from app.config import get_settings
+from app.db.models import DBUser
+from app.db.session import get_db
+from app.models.auth import User
+from app.services.authorization import get_authorized_assessment
+from app.services.ws_tickets import redeem_ticket
 from app.services.progress_snapshot import (
     build_progress_snapshot,
     is_terminal_snapshot,
@@ -202,8 +209,44 @@ async def push_progress_loop(
 async def websocket_endpoint(
     websocket: WebSocket,
     assessment_id: str,
+    db: AsyncSession = Depends(get_db),
 ):
-    """WebSocket endpoint for live progress updates."""
+    """WebSocket endpoint for live progress updates.
+
+    T3: authentication happens BEFORE ``accept()``. The client presents a
+    single-use ticket (minted via ``POST .../ws-ticket``) as ``?ticket=``.
+    Close codes: 4401 = missing/unknown/expired/used ticket or inactive
+    user; 4403 = valid ticket but no access to this assessment (this also
+    covers non-existent assessments, preserving the no-oracle policy).
+    """
+    grant = redeem_ticket(websocket.query_params.get("ticket"))
+    if grant is None:
+        await websocket.close(code=4401)
+        return
+    ticket_user_id, bound_assessment_id = grant
+    if bound_assessment_id != assessment_id:
+        await websocket.close(code=4403)
+        return
+
+    result = await db.execute(select(DBUser).where(DBUser.id == ticket_user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user or not db_user.active:
+        await websocket.close(code=4401)
+        return
+    user = User(
+        id=db_user.id,
+        uid=db_user.uid,
+        name=db_user.name,
+        role=db_user.role,
+        active=db_user.active,
+        created_at=db_user.created_at,
+    )
+    try:
+        await get_authorized_assessment(assessment_id, user, get_cybog_service())
+    except HTTPException:
+        await websocket.close(code=4403)
+        return
+
     await manager.connect(assessment_id, websocket)
     stop_event = asyncio.Event()
     push_task = asyncio.create_task(

@@ -127,12 +127,13 @@ export function AssessmentCreationForm({
 }) {
   const [mode, setMode] = useState<Mode>('single');
   const [name, setName] = useState('');
-  const [profile, setProfile] = useState<'standard' | 'quick'>('standard');
+  const [profile, setProfile] = useState<'standard' | 'quick' | 'full'>('standard');
   const [singleTarget, setSingleTarget] = useState('');
   const [entries, setEntries] = useState<TargetEntry[]>([]);
   const [targetsFileName, setTargetsFileName] = useState('');
   const [scopePatterns, setScopePatterns] = useState<string[]>([]);
   const [scopeFileName, setScopeFileName] = useState('');
+  const [authorized, setAuthorized] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -162,11 +163,11 @@ export function AssessmentCreationForm({
 
   const submittable = submittableTargets(effectiveEntries);
   const hasInvalid = effectiveEntries.some((e) => e.status === 'INVALID');
-  const canSubmit = name.trim() !== '' && submittable.length > 0 && !loading;
+  const canSubmit = name.trim() !== '' && submittable.length > 0 && authorized && !loading;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submittable.length === 0) return;
+    if (submittable.length === 0 || !authorized) return;
     setLoading(true);
     setError(null);
 
@@ -182,6 +183,46 @@ export function AssessmentCreationForm({
         scope_file: scopeContent,
         profile,
       });
+
+      // T5: explicit human authorization is the blocking pre-execution
+      // step. The checkbox above is the operator's confirmation.
+      try {
+        await api.authorizeAssessment(created.assessment_id);
+      } catch (authErr: any) {
+        setLoading(false);
+        const reason = authErr?.message || 'unknown error';
+        setError(
+          `Assessment ${created.assessment_id} was created but could not be authorized: ` +
+            `${reason}. Open it from the dashboard to confirm authorization.`
+        );
+        return;
+      }
+
+      // T7: preflight is the mandatory gate before start. A NOT READY
+      // result mutates nothing; the operator fixes the reasons and retries.
+      try {
+        const preflight = await api.preflightAssessment(created.assessment_id);
+        if (!preflight.ready) {
+          setLoading(false);
+          const reasons = preflight.checks
+            .filter((c) => !c.ok)
+            .map((c) => `${c.name}: ${c.detail}`)
+            .join('; ');
+          setError(
+            `Assessment ${created.assessment_id} is NOT READY: ${reasons}. ` +
+              `The assessment has not started.`
+          );
+          return;
+        }
+      } catch (preflightErr: any) {
+        setLoading(false);
+        const reason = preflightErr?.message || 'unknown error';
+        setError(
+          `Assessment ${created.assessment_id} could not complete preflight: ` +
+            `${reason}. The assessment has not started.`
+        );
+        return;
+      }
 
       try {
         await api.startAssessment(created.assessment_id);
@@ -338,12 +379,13 @@ export function AssessmentCreationForm({
           <FieldLabel>Scan Profile</FieldLabel>
           <select
             value={profile}
-            onChange={(e) => setProfile(e.target.value as 'standard' | 'quick')}
+            onChange={(e) => setProfile(e.target.value as 'standard' | 'quick' | 'full')}
             className="input-glow w-full px-4 py-2.5 rounded-input text-[14px] text-ink outline-none"
             style={{ background: '#faf8f5' }}
           >
             <option value="standard">Standard — Full Assessment</option>
             <option value="quick">Quick — Speed Optimized</option>
+            <option value="full">Full — Deepest Assessment</option>
           </select>
         </div>
       </div>
@@ -354,6 +396,23 @@ export function AssessmentCreationForm({
           Invalid targets will be skipped. Remove them if that is not intended.
         </p>
       )}
+
+      {/* Authorization confirmation (T5: blocking pre-execution step) */}
+      <label className="flex items-start gap-3 px-4 py-3 rounded-card text-[13px] text-ink"
+        style={{ background: '#faf8f5', border: '1px solid #e8e2d6' }}>
+        <input
+          type="checkbox"
+          checked={authorized}
+          onChange={(e) => setAuthorized(e.target.checked)}
+          className="mt-0.5 accent-[#27251e]"
+        />
+        <span>
+          I confirm that I am authorized to perform security testing against
+          the target{submittable.length === 1 ? '' : 's'} and scope above.
+          This confirmation is recorded with my identity and cannot be changed
+          once execution begins.
+        </span>
+      </label>
 
       {/* Submit */}
       <button

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cybog.config.models import CybogConfig
-from cybog.models.assessment import AssessmentStatus
+from cybog.models.assessment import AssessmentStatus, AuthorizationStatus
 from cybog.models.job import JobStatus
 from cybog.models.target import TargetStatus
 from cybog.services.assessment_service import AssessmentService
@@ -57,6 +57,22 @@ def _is_safe_component(value: str) -> bool:
     return _SAFE_COMPONENT_RE.fullmatch(value) is not None
 
 
+def _authorization_summary(assessment: Any) -> Dict[str, Any]:
+    """Project the Authorization record for API responses (T5)."""
+    auth = getattr(assessment, "authorization", None)
+    if auth is None:
+        return {"required": True, "status": "PENDING", "confirmed": False}
+    status = getattr(auth.status, "value", auth.status)
+    return {
+        "required": auth.required,
+        "status": status,
+        "confirmed": status == "AUTHORIZED",
+        "authorized_by_user_id": auth.authorized_by_user_id,
+        "authorized_at": auth.authorized_at.isoformat() if auth.authorized_at else None,
+        "scope_sha256": auth.scope_sha256,
+    }
+
+
 class CybogIntegrationService:
     """
     Integration service that bridges the backend API to the Cybog pipeline.
@@ -71,7 +87,7 @@ class CybogIntegrationService:
         self._log = get_logger("cybog_integration_service")
         self._assessment_states: Dict[str, AssessmentState] = {}
 
-    def _is_file_content(self, value: str) -> bool:
+    def is_file_content(self, value: str) -> bool:
         """
         Check if the provided value is file content rather than a file path.
         
@@ -141,13 +157,13 @@ class CybogIntegrationService:
         try:
             # Handle file content for targets_file
             targets_path = targets_file
-            if self._is_file_content(targets_file):
+            if self.is_file_content(targets_file):
                 targets_path = self._write_content_to_temp_file(targets_file, "targets_")
                 self._log.info(f"Wrote targets content to temp file: {targets_path}")
             
             # Handle file content for scope_file
             scope_path = scope_file
-            if self._is_file_content(scope_file):
+            if self.is_file_content(scope_file):
                 scope_path = self._write_content_to_temp_file(scope_file, "scope_")
                 self._log.info(f"Wrote scope content to temp file: {scope_path}")
             
@@ -260,6 +276,22 @@ class CybogIntegrationService:
             "already_running": False,
         }
 
+    def _duplicate_ack(self, assessment_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Return the already_running acknowledgement when a live pipeline
+        task is registered, else None. Checked before any gate so a
+        duplicate start reports duplicate (not a status error) even after
+        the first start moved the assessment out of READY.
+        """
+        existing = _running_tasks.get(assessment_id)
+        if existing is not None and not existing.done():
+            return {
+                "assessment_id": assessment_id,
+                "status": "RUNNING",
+                "already_running": True,
+            }
+        return None
+
     def start_assessment_async(self, assessment_id: str) -> Dict[str, Any]:
         """
         Start an assessment in the background and return a 202 acknowledgement.
@@ -277,9 +309,24 @@ class CybogIntegrationService:
                 f"No state found for assessment: {assessment_id}"
             )
 
+        duplicate = self._duplicate_ack(assessment_id)
+        if duplicate is not None:
+            return duplicate
+
         if state.assessment.status == AssessmentStatus.CANCELLED:
             raise ValueError(
                 f"Assessment {assessment_id} is CANCELLED. Cannot execute."
+            )
+
+        self._require_human_authorized(state, assessment_id)
+
+        # T7 gate: only a preflight-verified assessment may start. This
+        # eliminates the false-"running" class: QUEUED implies CAN start.
+        if state.assessment.status != AssessmentStatus.READY:
+            raise ValueError(
+                f"Assessment {assessment_id} is not ready "
+                f"(status {state.assessment.status.value}). "
+                f"Run preflight first."
             )
 
         # Set status to QUEUED immediately
@@ -324,10 +371,16 @@ class CybogIntegrationService:
                 f"No state found for assessment: {assessment_id}"
             )
 
+        duplicate = self._duplicate_ack(assessment_id)
+        if duplicate is not None:
+            return duplicate
+
         if state.assessment.status == AssessmentStatus.CANCELLED:
             raise ValueError(
                 f"Assessment {assessment_id} is CANCELLED. Cannot resume."
             )
+
+        self._require_human_authorized(state, assessment_id)
 
         task, response = self._pipeline_coroutine(
             assessment_id,
@@ -335,6 +388,85 @@ class CybogIntegrationService:
             lambda: self._service.resume(assessment_id),
         )
         return response
+
+    @staticmethod
+    def _require_human_authorized(state: AssessmentState, assessment_id: str) -> None:
+        """Pre-launch gate: refuse to run unconfirmed assessments (T5)."""
+        auth = state.assessment.authorization
+        if not auth or auth.status != AuthorizationStatus.AUTHORIZED:
+            raise ValueError(
+                f"Assessment {assessment_id} has not been human-authorized. "
+                f"Confirm authorization before starting."
+            )
+
+    def authorize_assessment(self, assessment_id: str, actor_user_id: str) -> Dict[str, Any]:
+        """
+        Record explicit human authorization for an assessment.
+
+        Allowed only before execution begins (the engine enforces the
+        frozen scope); the route additionally restricts *who* may confirm.
+        """
+        state = self._service.confirm_authorization(assessment_id, actor_user_id)
+        auth = state.assessment.authorization
+        return {
+            "assessment_id": assessment_id,
+            "authorized": auth.status == AuthorizationStatus.AUTHORIZED,
+            "authorized_by_user_id": auth.authorized_by_user_id,
+            "authorized_at": auth.authorized_at.isoformat() if auth.authorized_at else None,
+            "scope_sha256": auth.scope_sha256,
+        }
+
+    def _is_running(self, assessment_id: str) -> bool:
+        """True while a background pipeline task is live for the assessment."""
+        task = _running_tasks.get(assessment_id)
+        return task is not None and not task.done()
+
+    async def run_preflight(self, assessment_id: str) -> Dict[str, Any]:
+        """
+        Run the mandatory pre-execution boundary (T7).
+
+        All seven checks must pass; on success the assessment moves to
+        READY (idempotent: re-running on READY re-verifies). Anything else
+        raises ValueError (frozen scope) or returns ready=false with the
+        itemized failure reasons. Never mutates on failure.
+        """
+        from app.services import preflight as preflight_checks
+
+        try:
+            state = self._service.load_state(assessment_id)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"No state found for assessment: {assessment_id}"
+            )
+
+        if state.assessment.status not in (
+            AssessmentStatus.CREATED, AssessmentStatus.READY,
+        ):
+            raise ValueError(
+                f"Assessment {assessment_id} preflight is only available "
+                f"before execution (status {state.assessment.status.value})."
+            )
+
+        checks = [
+            preflight_checks.check_target(state),
+            preflight_checks.check_scope(state),
+            preflight_checks.check_authorization(state),
+            preflight_checks.check_profile(state),
+            preflight_checks.check_worker(self._is_running(assessment_id)),
+            preflight_checks.check_storage(self.config),
+            preflight_checks.check_scope_compiler(state),
+            await preflight_checks.check_toolchain(self.config),
+        ]
+        ready = all(c.ok for c in checks)
+        if ready:
+            state.assessment.status = AssessmentStatus.READY
+            self._service.save_state(state)
+        return {
+            "assessment_id": assessment_id,
+            "ready": ready,
+            "status": state.assessment.status.value,
+            "checks": [preflight_checks.as_dict(c) for c in checks],
+        }
 
     async def cancel_assessment(self, assessment_id: str) -> bool:
         """
@@ -657,6 +789,7 @@ class CybogIntegrationService:
             "owner_id": state.assessment.owner_id,
             "profile": state.assessment.profile,
             "artifact_root": state.assessment.artifact_root,
+            "authorization": _authorization_summary(state.assessment),
             "progress": {
                 "total_targets": total_targets,
                 "completed_targets": completed_targets,

@@ -22,11 +22,14 @@ class Role(str, Enum):
     - ``VALIDATOR``: can validate/reject findings (exclusive) in addition to
       operator actions.
     - ``MANAGEMENT``: read-only oversight — dashboards and audit review.
+
+    (T2: the transient fourth value ``ANALYST`` was removed; pre-existing
+    rows are migrated to VALIDATOR. Validators serve the single shared
+    validation queue per the MVP policy in app.services.authorization.)
     """
 
     OPERATOR = "OPERATOR"
     VALIDATOR = "VALIDATOR"
-    ANALYST = "ANALYST"
     MANAGEMENT = "MANAGEMENT"
 
 

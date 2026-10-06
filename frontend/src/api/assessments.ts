@@ -44,6 +44,52 @@ export async function resumeAssessment(assessmentId: string): Promise<Assessment
   return response.data;
 }
 
+export interface AuthorizeResponse {
+  assessment_id: string;
+  authorized: boolean;
+  authorized_by_user_id: string | null;
+  authorized_at: string | null;
+  scope_sha256: string | null;
+}
+
+/**
+ * Record explicit human authorization (T5: blocking pre-execution step).
+ * The owner confirms they are authorized to assess the target/scope;
+ * execution refuses unconfirmed assessments. Rejected (409) once the
+ * assessment has left CREATED: target/scope are frozen then.
+ */
+export async function authorizeAssessment(assessmentId: string): Promise<AuthorizeResponse> {
+  const response = await axiosInstance.post<AuthorizeResponse>(
+    `/assessments/${assessmentId}/authorize`
+  );
+  return response.data;
+}
+
+export interface PreflightCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface PreflightResponse {
+  assessment_id: string;
+  ready: boolean;
+  status: string;
+  checks: PreflightCheck[];
+}
+
+/**
+ * Run the mandatory pre-execution boundary (T7). All checks must pass
+ * (ready=true, status READY) before start is accepted. A NOT READY
+ * response carries itemized reasons and mutates nothing.
+ */
+export async function preflightAssessment(assessmentId: string): Promise<PreflightResponse> {
+  const response = await axiosInstance.post<PreflightResponse>(
+    `/assessments/${assessmentId}/preflight`
+  );
+  return response.data;
+}
+
 export async function cancelAssessment(
   assessmentId: string
 ): Promise<{ assessment_id: string; cancelled: boolean }> {
@@ -60,4 +106,23 @@ export async function getAssessmentStatus(assessmentId: string): Promise<Assessm
 
 export async function getAssessmentProgress(assessmentId: string): Promise<AssessmentStatusResponse> {
   return getAssessmentStatus(assessmentId);
+}
+
+export interface WsTicket {
+  ticket: string;
+  expires_in: number;
+  assessment_id: string;
+}
+
+/**
+ * Mint a single-use WebSocket ticket (T3). Browsers cannot send
+ * Authorization headers on WS handshakes, so each (re)connect fetches a
+ * fresh ticket and presents it as `?ticket=`. Tickets expire after 60s
+ * and are consumed on first use.
+ */
+export async function fetchWsTicket(assessmentId: string): Promise<WsTicket> {
+  const response = await axiosInstance.post<WsTicket>(
+    `/assessments/${assessmentId}/ws-ticket`
+  );
+  return response.data;
 }
