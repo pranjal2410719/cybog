@@ -136,15 +136,19 @@ async def health():
     return {"status": "healthy", "version": "1.0.0"}
 
 
-async def _load_snapshot(assessment_id: str) -> Dict[str, object]:
+async def _load_snapshot(assessment_id: str) -> Optional[Dict[str, object]]:
     """
     Read the real AssessmentState for an assessment and project it to a snapshot.
 
-    Raises FileNotFoundError when the assessment has no persisted state.
+    Returns None when the assessment has no persisted state (snapshot file missing).
+    Raises other exceptions for real errors.
     """
     service = get_cybog_service()
-    state = service.load_state(assessment_id)
-    return build_progress_snapshot(state, assessment_id)
+    try:
+        state = service.load_state(assessment_id)
+        return build_progress_snapshot(state, assessment_id)
+    except FileNotFoundError:
+        return None
 
 
 async def push_progress_loop(
@@ -170,18 +174,30 @@ async def push_progress_loop(
         if assessment_id not in manager.active_connections:
             return
 
-        try:
-            snapshot = await _load_snapshot(assessment_id)
-        except FileNotFoundError:
-            await manager.send_to_assessment(
-                assessment_id, not_found_snapshot(assessment_id)
-            )
-            return
-        except Exception:
-            logger.exception(
-                f"Failed to build progress snapshot for {assessment_id}"
-            )
-            return
+        snapshot = await _load_snapshot(assessment_id)
+        if snapshot is None:
+            # State file momentarily unavailable — check if assessment exists
+            service = get_cybog_service()
+            try:
+                service.get_assessment(assessment_id)  # raises if truly non-existent
+                # Assessment exists; snapshot is momentarily unreadable, retry later
+                logger.warning(
+                    f"Snapshot file momentarily unreadable for {assessment_id}; "
+                    "retrying on next tick"
+                )
+            except HTTPException:
+                # Assessment truly does not exist — send NOT_FOUND
+                await manager.send_to_assessment(
+                    assessment_id, not_found_snapshot(assessment_id)
+                )
+                return
+            except Exception:
+                # Some other error checking existence; conservatively retry
+                logger.exception(
+                    f"Error checking existence for {assessment_id}; retrying"
+                )
+            await asyncio.sleep(wait)
+            continue
 
         await manager.send_to_assessment(assessment_id, snapshot)
         iterations += 1

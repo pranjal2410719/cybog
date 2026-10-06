@@ -239,7 +239,7 @@ export function AssessmentCreationForm({
       if (onAssessmentCreated) {
         onAssessmentCreated(created.assessment_id);
       } else {
-        window.location.href = `/assessments/${created.assessment_id}`;
+        window.location.href = `/operator/assessments/${created.assessment_id}`;
       }
     } catch (err: any) {
       console.error('Failed to create assessment:', err);

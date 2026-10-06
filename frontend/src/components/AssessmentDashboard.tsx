@@ -64,7 +64,11 @@ function AssessmentCard({
   onStart: () => void;
   onCancel: () => void;
 }) {
-  const pct = assessment.progress?.completion_percentage ?? 0;
+  const pct = assessment.progress?.completion_percentage !== undefined
+      ? assessment.status === 'COMPLETED'
+        ? 100
+        : Math.min(100, Math.max(0, assessment.progress?.completion_percentage ?? 0))
+      : 0;
   const isRunning = assessment.status === 'RUNNING' || assessment.status === 'RESUMING';
 
   return (

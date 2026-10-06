@@ -7,7 +7,7 @@
  *  3. Findings section (table → card stack on mobile)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api, WebSocketManager } from '../api';
 import { LiveStatusPanel, useLiveStatus } from './LiveStatusPanel';
 import type {
@@ -206,6 +206,8 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
   const [pendingInfo, setPendingInfo] = useState<number | null>(null);
   const [pendingError, setPendingError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const errorStatusRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   const live = useLiveStatus(assessmentId);
   const isAuthorized = assessment?.authorization?.confirmed === true;
 
@@ -229,23 +231,99 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
   }, [assessmentId]);
 
   useEffect(() => {
-    fetchAssessment();
-    const wsManager = new WebSocketManager(assessmentId);
-    wsManager.onProgressUpdate((data) => {
-      if (status) setStatus((prev) => prev ? { ...prev, progress: data.progress } : prev);
-    });
-    wsManager.onFindingUpdate((data: any) => {
-      if (data.action === 'created') {
-        setFindings((prev) => [...prev, data.finding]);
-      } else if (['updated', 'validated', 'rejected'].includes(data.action)) {
-        setFindings((prev) =>
-          prev.map((f) => f.finding_id === data.finding.finding_id ? data.finding : f)
-        );
+    }, [assessmentId, live]);
+
+  // Single retry loop with backoff, status-code distinction, and unmount cancellation
+  useEffect(() => {
+    mountedRef.current = true;
+    let retries = 0;
+    const maxRetries = 3;
+    const initialDelay = 1000; // 1s start
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const attemptFetch = async () => {
+      if (retries >= maxRetries) {
+        setError('Failed to load assessment after maximum retries');
+        return;
       }
-    });
-    wsManager.connect();
-    const interval = setInterval(fetchAssessment, 30000);
-    return () => { wsManager.disconnect(); clearInterval(interval); };
+      if (!mountedRef.current) return;
+      retries++;
+      setError(null);
+      setLoading(true);
+      try {
+        const [assessmentData, statusData, findingsData] = await Promise.all([
+          api.getAssessment(assessmentId),
+          api.getAssessmentStatus(assessmentId),
+          api.getFindings(assessmentId),
+        ]);
+        setAssessment(assessmentData);
+        setStatus(statusData);
+        setFindings(findingsData);
+      } catch (err: any) {
+        errorStatusRef.current = err.status ?? null;
+        // Do not retry auth errors — show immediately and stop
+        if (err.status === 401 || err.status === 403) {
+          setError('Authentication failed - please check your credentials');
+          mountedRef.current = false;
+          return;
+        }
+        const msg = err?.message || 'Failed to load assessment details';
+        setError(msg);
+        if (retries < maxRetries) {
+          const delay = initialDelay * 2 ** (retries - 1);
+          timeoutId = setTimeout(attemptFetch, delay);
+        }
+      } finally {
+        if (mountedRef.current) setLoading(false);
+      }
+    };
+
+    attemptFetch();
+
+    return () => {
+      mountedRef.current = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [assessmentId, fetchAssessment, live]);
+
+  // Retry with backoff for initial load (handles race condition where
+  // assessment state file isn't immediately synced to disk after creation)
+  useEffect(() => {
+    let retries = 0;
+    const maxRetries = 3;
+    const initialDelay = 1000; // 1s start
+
+    const attemptFetch = async () => {
+      if (retries >= maxRetries) {
+        setError('Failed to load assessment after maximum retries');
+        return;
+      }
+      retries++;
+      setError(null);
+      setLoading(true);
+      try {
+        const [assessmentData, statusData, findingsData] = await Promise.all([
+          api.getAssessment(assessmentId),
+          api.getAssessmentStatus(assessmentId),
+          api.getFindings(assessmentId),
+        ]);
+        setAssessment(assessmentData);
+        setStatus(statusData);
+        setFindings(findingsData);
+      } catch (err: any) {
+        const msg = err?.message || 'Failed to load assessment details';
+        setError(msg);
+        if (retries < maxRetries) {
+          const delay = initialDelay * 2 ** (retries - 1);
+          const timeout = setTimeout(attemptFetch, delay);
+          return () => clearTimeout(timeout);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    attemptFetch();
   }, [assessmentId, fetchAssessment]);
 
   const handleStartAssessment = async () => {
@@ -362,7 +440,11 @@ export function AssessmentDetail({ assessmentId, onBack }: AssessmentDetailProps
     );
   }
 
-  const pct = status?.progress?.completion_percentage ?? 0;
+  const pct = status?.progress?.completion_percentage !== undefined
+      ? status.status === 'COMPLETED'
+        ? 100
+        : Math.min(100, Math.max(0, status?.progress?.completion_percentage ?? 0))
+      : 0;
 
   // ─── Render ────────────────────────────────────────────────────────────────
 

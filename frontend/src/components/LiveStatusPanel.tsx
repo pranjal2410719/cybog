@@ -253,8 +253,16 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
   if (status.notFound) {
     return (
       <div className="px-4 py-3 rounded-card text-[14px]"
-           style={{ background: '#fdf3f3', border: '1px solid #f5c6c6', color: '#c0392b' }}>
-        The backend does not know this assessment id.
+           style={{ background: '#fff8ee', border: '1px solid #f5d5a0', color: '#9a6700' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-graphite">
+            Connection state unknown — showing last REST poll data.
+          </span>
+        </div>
+        <p className="text-[12px] text-graphite mt-1">
+          The backend does not know this assessment id. The detail page's main content
+          is from the last 30s REST poll; use the Refresh button to re-fetch.
+        </p>
       </div>
     );
   }

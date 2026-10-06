@@ -320,8 +320,10 @@ function NewAssessmentPage() {
 
 function AssessmentDetailPage() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const assessmentId = location.pathname.split('/')[2];
+  const { id: assessmentId } = useParams<{ id: string }>();
+  if (!assessmentId) {
+    return <div className="p-4 text-center">Assessment not found</div>;
+  }
   return (
     <AssessmentDetail
       assessmentId={assessmentId}
@@ -332,8 +334,10 @@ function AssessmentDetailPage() {
 
 function AssessmentReportsPageWrapper() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const assessmentId = location.pathname.split('/')[2];
+  const { id: assessmentId } = useParams<{ id: string }>();
+  if (!assessmentId) {
+    return <div className="p-4 text-center">Assessment not found</div>;
+  }
   return (
     <AssessmentReportsPage
       assessmentId={assessmentId}

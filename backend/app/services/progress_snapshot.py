@@ -242,7 +242,9 @@ def build_progress_snapshot(
         "jobs_failed": job_counts.get(JobStatus.FAILED.value, 0),
         "job_status_counts": job_counts,
         "completion_percentage": (
-            round(completed_jobs / total_jobs * 100, 2) if total_jobs else 0.0
+            100.0
+            if status == JobStatus.COMPLETED.value
+            else round(completed_jobs / total_jobs * 100, 2) if total_jobs else 0.0
         ),
         "findings_count": len(state.findings),
         "pending_validation_count": state.pending_validation_count(),
