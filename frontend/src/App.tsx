@@ -449,6 +449,8 @@ function RootRoute() {
   return <RootRedirect />;
 }
 
+import { ValidationQueuePage } from './pages/validator/ValidationQueue';
+
 const router = createBrowserRouter([
   {
     path: '/',
@@ -491,8 +493,8 @@ const router = createBrowserRouter([
       {
         element: <ValidatorLayout />,
         children: [
-          { path: 'queue', element: <AssessmentFindingsPage /> },
-          { path: 'queue/:id', element: <AssessmentFindingsPage /> },
+          { path: 'queue', element: <ValidationQueuePage /> },
+          { path: 'queue/:id', element: <ValidationQueuePage /> },
         ]
       }
     ]
