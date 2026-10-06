@@ -28,6 +28,7 @@ async def list_users(
     users = result.scalars().all()
     return [
         User(
+            id=u.id,
             uid=u.uid,
             name=u.name,
             role=u.role,
@@ -54,17 +55,19 @@ async def create_user(
         
     random_id = secrets.token_hex(4)
     uid = f"{prefix}{random_id}"
+    user_id = str(uuid.uuid4())
     
     db_user = DBUser(
+        id=user_id,
         uid=uid,
         name=user_in.name,
         role=user_in.role
     )
     db.add(db_user)
     await db.commit()
-    await db.refresh(db_user)
     
     return User(
+        id=db_user.id,
         uid=db_user.uid,
         name=db_user.name,
         role=db_user.role,

@@ -32,7 +32,7 @@ class Role(str, Enum):
 class User(BaseModel):
     """A registered user identified by a stable ``uid`` (``USR-XXXX``)."""
 
-    id: str
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     uid: str
     name: str
     role: Role

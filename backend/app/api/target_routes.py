@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+import uuid
 from typing import List
 
 from app.db.session import get_db
@@ -17,7 +18,9 @@ async def create_target(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    target_id = str(uuid.uuid4())
     target = DBTarget(
+        id=target_id,
         name=target_in.name,
         domain=target_in.domain,
         description=target_in.description,
@@ -25,7 +28,6 @@ async def create_target(
     )
     db.add(target)
     await db.commit()
-    await db.refresh(target)
     
     return TargetResponse(
         id=target.id,
