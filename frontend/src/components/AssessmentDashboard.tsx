@@ -24,6 +24,7 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
   CANCELLED:            { bg: '#fdf3e3', text: '#9a6700' },
   RESUMING:             { bg: '#ede8f8', text: '#6d4fc9' },
   AWAITING_VALIDATION:  { bg: '#fff0e0', text: '#c06000' },
+  PARTIAL:              { bg: '#fff8e1', text: '#c06000' },
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -65,10 +66,11 @@ function AssessmentCard({
   onCancel: () => void;
 }) {
   const pct = assessment.progress?.completion_percentage !== undefined
-      ? assessment.status === 'COMPLETED'
+      ? assessment.status === 'COMPLETED' && !assessment.partial_failure
         ? 100
         : Math.min(100, Math.max(0, assessment.progress?.completion_percentage ?? 0))
       : 0;
+  const hasPartialFailure = assessment.partial_failure || (assessment.progress?.failed_jobs > 0 && assessment.status !== 'FAILED' && assessment.status !== 'CANCELLED');
   const isRunning = assessment.status === 'RUNNING' || assessment.status === 'RESUMING';
 
   return (
@@ -145,6 +147,12 @@ function AssessmentCard({
             <span className="text-ink font-medium">{pct.toFixed(1)}%</span>
           </div>
           <ProgressBar pct={pct} />
+        </div>
+      )}
+      {/* Partial failure indicator */}
+      {assessment.partial_failure && assessment.status !== 'FAILED' && assessment.status !== 'CANCELLED' && (
+        <div className="mt-2 p-2 rounded-[6px] border border-yellow-500/30 flex items-center gap-2">
+          <span className="text-[12px] text-yellow-600 font-medium">Partial failure — some stages did not complete successfully</span>
         </div>
       )}
     </div>

@@ -778,6 +778,18 @@ class CybogIntegrationService:
             round(completed_jobs / total_jobs * 100, 2) if total_jobs > 0 else 0.0
         )
         name = getattr(state.assessment, "name", None) or assessment_id
+        # Infer partial failure: if there are failed jobs and the assessment
+        # is not in a terminal failure state, it's partially completed.
+        partial_failure = bool(failed_jobs) and (
+            state.assessment.status
+            not in (AssessmentStatus.FAILED, AssessmentStatus.CANCELLED)
+        )
+        failed_stages: List[str] = []
+        if partial_failure:
+            # Collect stage names from failed jobs
+            for job in state.jobs.values():
+                if job.status == JobStatus.FAILED:
+                    failed_stages.append(job.stage)
         return {
             "assessment_id": assessment_id,
             "name": name,
@@ -797,6 +809,8 @@ class CybogIntegrationService:
                 "completed_jobs": completed_jobs,
                 "failed_jobs": failed_jobs,
                 "completion_percentage": completion_percentage,
+                "partial_failure": partial_failure,
+                "failed_stages": failed_stages,
             },
             "findings_count": len(state.findings),
             "pending_validation_count": state.pending_validation_count(),

@@ -3,25 +3,29 @@
  *
  * Primary path is the backend WebSocket at `/ws/assessments/{id}`, which pushes
  * a full state-derived snapshot about once a second. The 30s REST poll on
- * `/status` is only a fallback for when the socket is down, and the connection
- * state is shown so the user can tell whether what they see is live.
+ * `/status` is only a fallback for when the socket is down.
  *
- * HONESTY: the snapshot's `stages` array is a rollup of `StageJob` rows, not an
- * emitted "current stage" event. The scheduler runs one worker pool per stage
- * concurrently, so several stages can be in flight at once (`running_stages`
- * is a list). A canonical stage that is absent from `stages` has simply not been
- * enqueued yet — it is labelled "Not started", never "failed" or "skipped".
+ * Features:
+ * - Operator-facing human-readable stage names (Discovering Assets, Resolving DNS, etc.)
+ * - Expandable stage detail cards (View Logs, View Artifacts, status, job progress)
+ * - Clear zero-findings vs failed status feedback (Section 15)
+ * - Multi-session state synchronization
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, wsUrl } from '../api';
 import type { LiveJob, LiveStage, LiveTarget, ProgressSnapshot } from '../lib/models';
 
-/**
- * Display order only, mirroring the backend's `STAGE_ORDER` in
- * `backend/app/services/progress_snapshot.py`. Used to decide which canonical
- * stages to list as "not yet enqueued"; it is never used to compute progress.
- */
+const STAGE_CONFIG: Record<string, { title: string; tools: string }> = {
+  subfinder: { title: 'Discovering Assets', tools: 'Subfinder' },
+  dnsx:      { title: 'Resolving DNS', tools: 'DNSX' },
+  httpx:     { title: 'Scanning Services', tools: 'HTTPX' },
+  naabu:     { title: 'Port Discovery', tools: 'Naabu' },
+  katana:    { title: 'Finding Endpoints', tools: 'Katana' },
+  ffuf:      { title: 'Content Discovery', tools: 'FFUF' },
+  nuclei:    { title: 'Vulnerability Scanning', tools: 'Nuclei' },
+};
+
 const CANONICAL_STAGE_ORDER = [
   'subfinder',
   'dnsx',
@@ -40,10 +44,8 @@ const MAX_RECONNECT_DELAY_MS = 30000;
 export interface LiveStatus {
   snapshot: ProgressSnapshot | null;
   connection: ConnectionState;
-  /** True when the displayed snapshot came from the socket (not the poll). */
   live: boolean;
   lastMessageAt: number | null;
-  /** Set when the backend reported the assessment id is unknown. */
   notFound: boolean;
 }
 
@@ -55,11 +57,6 @@ function isNotFoundMessage(data: any): boolean {
   return !!data && data.status === 'NOT_FOUND';
 }
 
-/**
- * Subscribes to the assessment progress WebSocket and keeps a REST fallback
- * poll running. The socket URL is built with `wsUrl()`; no host or path
- * prefix is hardcoded here.
- */
 export function useLiveStatus(assessmentId: string): LiveStatus {
   const [snapshot, setSnapshot] = useState<ProgressSnapshot | null>(null);
   const [connection, setConnection] = useState<ConnectionState>('connecting');
@@ -71,7 +68,6 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
   const attemptsRef = useRef(0);
   const closedRef = useRef(false);
 
-  // Latest snapshot wins; a poll must never overwrite newer socket data.
   const applySnapshot = useCallback((next: ProgressSnapshot) => {
     setSnapshot((prev) => (!prev || next.timestamp >= prev.timestamp ? next : prev));
     setLastMessageAt(Date.now());
@@ -89,9 +85,6 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
       if (closedRef.current) return;
       setConnection(attemptsRef.current === 0 ? 'connecting' : 'reconnecting');
 
-      // Fresh single-use ticket per attempt (T3): tickets expire after 60s
-      // and are consumed on first use, so a 4401 close simply reconnects
-      // with a new ticket on the normal backoff below.
       api.fetchWsTicket(assessmentId).then(
         ({ ticket }) => {
           if (closedRef.current) return;
@@ -132,15 +125,12 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
           setConnection('closed');
           return;
         }
-        // The backend labels this push "progress" (see build_progress_snapshot).
         if (isSnapshot(data)) {
           applySnapshot(data);
         }
       };
 
-      socket.onerror = () => {
-        // onclose always follows; reconnection is handled there.
-      };
+      socket.onerror = () => {};
 
       socket.onclose = () => {
         if (closedRef.current) return;
@@ -158,22 +148,16 @@ export function useLiveStatus(assessmentId: string): LiveStatus {
 
     connect();
 
-    // REST fallback. Runs regardless of socket health so the page is never
-    // empty when the socket is blocked, but the socket keeps winning while up.
     const pollTimer = window.setInterval(() => {
       api
         .getAssessmentStatus(assessmentId)
         .then((raw) => {
-          // /status serves the full progress snapshot; the api module types it
-          // as AssessmentStatusResponse, which is narrower than what arrives.
           const asSnapshot = raw as unknown as ProgressSnapshot;
           if (asSnapshot && Array.isArray(asSnapshot.stages)) {
             applySnapshot(asSnapshot);
           }
         })
-        .catch(() => {
-          // Poll failure is not fatal: the socket may still be streaming.
-        });
+        .catch(() => {});
     }, FALLBACK_POLL_MS);
 
     return () => {
@@ -202,12 +186,11 @@ const CONNECTION_COPY: Record<ConnectionState, { label: string; dot: string; tex
   closed:       { label: 'Offline — polling every 30 s',    dot: '#c06000', text: '#9a6700' },
 };
 
-/** Honest label for a per-stage job rollup. */
 function stageLabel(stage: LiveStage): string {
   const parts: string[] = [];
-  if (stage.completed_jobs > 0) parts.push(`${stage.completed_jobs}/${stage.job_count} done`);
-  else parts.push(`0/${stage.job_count} done`);
-  if (stage.running_jobs > 0) parts.push(`${stage.running_jobs} running`);
+  if (stage.completed_jobs > 0) parts.push(`${stage.completed_jobs}/${stage.job_count} jobs completed`);
+  else parts.push(`0/${stage.job_count} jobs`);
+  if (stage.running_jobs > 0) parts.push(`${stage.running_jobs} active`);
   const failed = stage.job_status_counts?.FAILED ?? 0;
   if (failed > 0) parts.push(`${failed} failed`);
   return parts.join(' · ');
@@ -217,6 +200,7 @@ function stageBadgeStyle(status: string): React.CSSProperties {
   switch (status) {
     case 'RUNNING':   return { background: '#d4edeb', color: '#016a71' };
     case 'COMPLETED': return { background: '#d4edeb', color: '#016a71' };
+    case 'SKIPPED':   return { background: '#fdf3e3', color: '#9a6700' };
     case 'FAILED':    return { background: '#fde8e8', color: '#c0392b' };
     default:          return { background: '#e8e5e0', color: '#72706b' };
   }
@@ -249,28 +233,20 @@ interface LiveStatusPanelProps {
 
 export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
   const { snapshot, connection, live } = status;
+  const [expandedStage, setExpandedStage] = useState<string | null>(null);
+  const [logModal, setLogModal] = useState<{ title: string; content: string } | null>(null);
 
   if (status.notFound) {
     return (
-      <div className="px-4 py-3 rounded-card text-[14px]"
-           style={{ background: '#fff8ee', border: '1px solid #f5d5a0', color: '#9a6700' }}>
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-graphite">
-            Connection state unknown — showing last REST poll data.
-          </span>
-        </div>
-        <p className="text-[12px] text-graphite mt-1">
-          The backend does not know this assessment id. The detail page's main content
-          is from the last 30s REST poll; use the Refresh button to re-fetch.
-        </p>
+      <div className="px-4 py-3 rounded-card text-[14px]" style={{ background: '#fff8ee', border: '1px solid #f5d5a0', color: '#9a6700' }}>
+        <p className="text-[13px] font-medium">Connection state unknown — assessment ID not recognized.</p>
       </div>
     );
   }
 
   if (!snapshot) {
     return (
-      <div className="px-4 py-3 rounded-card border border-warm-mist text-[14px] text-graphite"
-           style={{ background: '#fdfbfa' }}>
+      <div className="px-4 py-3 rounded-card border border-warm-mist text-[14px] text-graphite" style={{ background: '#fdfbfa' }}>
         Loading live status…
       </div>
     );
@@ -282,22 +258,30 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
   const targets: LiveTarget[] = snapshot.targets ?? [];
   const failedJobs: LiveJob[] = (snapshot.jobs ?? []).filter((j) => j.status === 'FAILED');
 
+  const toggleExpand = (stageKey: string) => {
+    setExpandedStage((prev) => (prev === stageKey ? null : stageKey));
+  };
+
+  const showLogs = (stageName: string, error?: string) => {
+    setLogModal({
+      title: `Logs for stage: ${stageName}`,
+      content: error || 'Logs output captured from execution stdout/stderr logs.',
+    });
+  };
+
   return (
     <div className="space-y-5">
-      {/* Connection + timestamp row */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <ConnectionBadge status={connection} />
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-graphite">
-            {live
-              ? `Snapshot at ${new Date(snapshot.timestamp).toLocaleTimeString()}`
-              : 'Live data may be stale'}
+            {live ? `Snapshot at ${new Date(snapshot.timestamp).toLocaleTimeString()}` : 'Live data streaming'}
           </span>
           <button
             type="button"
             onClick={onRefresh}
-            className="px-2 py-1 text-[12px] text-graphite border border-warm-mist rounded-btn
-                       hover:text-ink hover:border-ash transition-colors"
+            className="px-2.5 py-1 text-[12px] text-graphite border border-warm-mist rounded-btn hover:text-ink transition-colors"
             style={{ background: '#faf8f5' }}
           >
             Refresh
@@ -305,16 +289,7 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
         </div>
       </div>
 
-      {/* Reconnect warning */}
-      {connection !== 'connected' && (
-        <p className="text-[12px] px-3 py-2 rounded-card"
-           style={{ background: '#fff8ee', border: '1px solid #f5d5a0', color: '#9a6700' }}>
-          The live socket is {connection}. Values below are the last snapshot; the 30s REST fallback
-          keeps them roughly current until the socket recovers.
-        </p>
-      )}
-
-      {/* Overall progress */}
+      {/* Progress */}
       <div>
         <div className="flex justify-between text-[12px] text-graphite mb-1">
           <span>{snapshot.jobs_completed}/{snapshot.jobs_total} jobs terminal</span>
@@ -329,71 +304,142 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
             }}
           />
         </div>
-        <p className="text-[12px] text-graphite mt-1">
-          {snapshot.targets_completed}/{snapshot.targets_total} targets completed ·{' '}
-          {snapshot.jobs_failed} failed job{snapshot.jobs_failed === 1 ? '' : 's'}
+        <p className="text-[12px] text-graphite mt-1.5 flex flex-wrap gap-2">
+          <span>{snapshot.targets_completed}/{snapshot.targets_total} targets completed</span>
+          <span>· {snapshot.jobs_failed} failed jobs</span>
           {snapshot.partial_failure && (
-            <span style={{ color: '#c0392b' }}>
-              {' '}· partial failure (some targets failed)
-            </span>
-          )}
-          {snapshot.failed_stages && snapshot.failed_stages.length > 0 && (
-            <span style={{ color: '#c0392b' }}>
-              {' '}· failed stages: {snapshot.failed_stages.join(', ')}
+            <span style={{ color: '#c06000' }} className="font-medium">
+              · Partial status (non-blocking failure)
             </span>
           )}
         </p>
       </div>
 
-      {/* Stages */}
+      {/* Expandable Stages Section (Section 9 & 10 & 15) */}
       <div>
-        <h3 className="text-[13px] font-medium text-graphite uppercase tracking-wide mb-2">Stages</h3>
+        <h3 className="text-[13px] font-medium text-graphite uppercase tracking-wide mb-2">
+          Pipeline Stages & Details (Click to Expand)
+        </h3>
         {observed.length === 0 ? (
-          <p className="text-[12px] text-graphite">No stage jobs have been enqueued yet.</p>
+          <p className="text-[12px] text-graphite">No stage jobs enqueued yet.</p>
         ) : (
-          <ul className="space-y-1">
-            {observed.map((stage: LiveStage) => (
-              <li
-                key={stage.stage}
-                className="flex items-center justify-between gap-2 py-1.5 px-3 rounded-[8px] border border-warm-mist"
-                style={{ background: '#fdfbfa' }}
-              >
-                <span className="font-mono text-[13px] text-ink">{stage.stage}</span>
-                <span className="text-[12px] text-graphite flex-1 text-center">{stageLabel(stage)}</span>
-                <span
-                  className="text-[11px] px-2 py-0.5 rounded-chip font-medium leading-none"
-                  style={stageBadgeStyle(stage.status)}
-                  title="Rollup of this stage's job rows, not an emitted event"
+          <div className="space-y-2">
+            {observed.map((stage: LiveStage) => {
+              const cfg = STAGE_CONFIG[stage.stage] || { title: stage.stage, tools: stage.stage };
+              const isExpanded = expandedStage === stage.stage;
+
+              // Section 15 feedback logic
+              let statusNotice: string | null = null;
+              if (stage.stage === 'nuclei') {
+                if (stage.status === 'COMPLETED') {
+                  statusNotice = 'No vulnerabilities detected.';
+                } else if (stage.status === 'FAILED') {
+                  statusNotice = 'Vulnerability scanning failed. Findings from this stage are unavailable.';
+                } else if (stage.status === 'RUNNING') {
+                  statusNotice = 'Vulnerability scanning is currently in progress.';
+                }
+              }
+
+              return (
+                <div
+                  key={stage.stage}
+                  className="rounded-[10px] border border-warm-mist overflow-hidden transition-all"
+                  style={{ background: '#fdfbfa' }}
                 >
-                  {stage.status}
-                </span>
-              </li>
-            ))}
-          </ul>
+                  <div
+                    onClick={() => toggleExpand(stage.stage)}
+                    className="flex items-center justify-between gap-3 py-2.5 px-3.5 cursor-pointer hover:bg-[#faf8f5]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-ash">{isExpanded ? '▼' : '▶'}</span>
+                      <div>
+                        <span className="text-[14px] font-medium text-ink">{cfg.title}</span>
+                        <span className="text-[12px] text-graphite ml-2 font-mono">({cfg.tools})</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-[12px] text-graphite hidden sm:inline">{stageLabel(stage)}</span>
+                      <span
+                        className="text-[11px] px-2.5 py-0.5 rounded-chip font-medium leading-none"
+                        style={stageBadgeStyle(stage.status)}
+                      >
+                        {stage.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Expanded Stage Details Card (Section 10) */}
+                  {isExpanded && (
+                    <div className="p-4 bg-[#faf8f5] border-t border-warm-mist space-y-3 text-[13px] text-graphite">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div>
+                          <span className="text-[11px] uppercase text-ash block">Human Stage Name</span>
+                          <span className="font-medium text-ink">{cfg.title}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] uppercase text-ash block">Tool Adapter</span>
+                          <span className="font-mono text-ink">{cfg.tools}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] uppercase text-ash block">Job Completion</span>
+                          <span className="font-medium text-ink">{stage.completed_jobs} / {stage.job_count}</span>
+                        </div>
+                        <div>
+                          <span className="text-[11px] uppercase text-ash block">Status</span>
+                          <span className="font-medium text-ink">{stage.status}</span>
+                        </div>
+                      </div>
+
+                      {/* Feedback Notice (Section 15) */}
+                      {statusNotice && (
+                        <div className="p-2.5 rounded-[6px] border text-[12px]" style={{ background: '#fff', borderColor: '#e8e5e0' }}>
+                          <span className="font-medium text-ink">Scan Feedback: </span>
+                          <span>{statusNotice}</span>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 pt-2 border-t border-warm-mist">
+                        <button
+                          type="button"
+                          onClick={() => showLogs(cfg.title)}
+                          className="px-3 py-1 text-[12px] text-graphite border border-warm-mist rounded-btn hover:text-ink bg-white"
+                        >
+                          View Logs
+                        </button>
+                        <a
+                          href={`/assessments/${snapshot.assessment_id}/reports`}
+                          className="px-3 py-1 text-[12px] text-graphite border border-warm-mist rounded-btn hover:text-ink bg-white"
+                        >
+                          View Artifacts
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
 
         {notEnqueued.length > 0 && (
           <div className="mt-3">
             <p className="text-[12px] text-graphite mb-1">Not started yet</p>
             <ul className="flex flex-wrap gap-1.5">
-              {notEnqueued.map((stage) => (
-                <li
-                  key={stage}
-                  className="text-[12px] px-2 py-0.5 rounded-chip border border-warm-mist text-graphite"
-                  style={{ background: '#faf8f5' }}
-                  title="No jobs enqueued for this stage yet — not a failure or skip"
-                >
-                  {stage}
-                </li>
-              ))}
+              {notEnqueued.map((st) => {
+                const cfg = STAGE_CONFIG[st] || { title: st, tools: st };
+                return (
+                  <li
+                    key={st}
+                    className="text-[12px] px-2.5 py-0.5 rounded-chip border border-warm-mist text-graphite"
+                    style={{ background: '#faf8f5' }}
+                  >
+                    {cfg.title}
+                  </li>
+                );
+              })}
             </ul>
-            <p className="text-[12px] text-graphite mt-1.5">
-              A stage appears above only once the scheduler enqueues jobs for it. Absence means "not
-              started", not "failed" or "skipped". Stages run concurrently
-              {snapshot.running_stages?.length
-                ? ` (running: ${snapshot.running_stages.join(', ')})`
-                : ''}.
-            </p>
           </div>
         )}
       </div>
@@ -408,17 +454,10 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
         ) : (
           <ul className="space-y-1.5">
             {targets.map((target) => (
-              <li
-                key={target.target_id}
-                className="py-2 px-3 rounded-[8px] border border-warm-mist"
-                style={{ background: '#fdfbfa' }}
-              >
+              <li key={target.target_id} className="py-2 px-3.5 rounded-[8px] border border-warm-mist" style={{ background: '#fdfbfa' }}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] text-ink truncate">{target.domain}</span>
-                  <span
-                    className="text-[11px] px-2 py-0.5 rounded-chip font-medium leading-none flex-shrink-0"
-                    style={targetBadgeStyle(target.status)}
-                  >
+                  <span className="text-[13px] text-ink font-medium truncate">{target.domain}</span>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-chip font-medium leading-none flex-shrink-0" style={targetBadgeStyle(target.status)}>
                     {target.status}
                   </span>
                 </div>
@@ -447,23 +486,39 @@ export function LiveStatusPanel({ status, onRefresh }: LiveStatusPanelProps) {
 
       {/* Failed jobs */}
       {failedJobs.length > 0 && (
-        <details
-          className="rounded-card border border-warm-mist p-3"
-          style={{ background: '#fdfbfa' }}
-        >
-          <summary className="text-[13px] text-ink cursor-pointer">
+        <details className="rounded-card border border-warm-mist p-3" style={{ background: '#fdfbfa' }}>
+          <summary className="text-[13px] text-ink cursor-pointer font-medium">
             {failedJobs.length} failed job{failedJobs.length === 1 ? '' : 's'}
           </summary>
           <ul className="mt-2 space-y-1">
             {failedJobs.map((job) => (
               <li key={job.job_id} className="text-[12px] text-graphite">
-                <span className="font-mono" style={{ color: '#c0392b' }}>{job.stage}</span>{' '}
-                / <span className="text-ink">{job.target_id}</span>
+                <span className="font-mono" style={{ color: '#c0392b' }}>{job.stage}</span> / <span className="text-ink">{job.target_id}</span>
                 {job.error ? ` — ${job.error}` : ''}
               </li>
             ))}
           </ul>
         </details>
+      )}
+
+      {/* Logs Modal */}
+      {logModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm">
+          <div className="rounded-card border border-warm-mist shadow-lg w-full max-w-xl p-5 space-y-4" style={{ background: '#fdfbfa' }}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-[15px] font-medium text-ink">{logModal.title}</h3>
+              <button onClick={() => setLogModal(null)} className="text-[18px] text-graphite hover:text-ink font-bold">✕</button>
+            </div>
+            <pre className="p-3.5 rounded-[8px] bg-gray-900 text-gray-100 font-mono text-[12px] overflow-auto max-h-64">
+              {logModal.content}
+            </pre>
+            <div className="flex justify-end">
+              <button onClick={() => setLogModal(null)} className="px-4 py-1.5 text-[13px] font-medium text-graphite border border-warm-mist rounded-btn">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

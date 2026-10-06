@@ -65,9 +65,9 @@ class AssessmentResponse(BaseModel):
     progress: Dict[str, Any] = {}
     findings_count: int = 0
     pending_validation_count: int = 0
-    # T5: authorization record (status/confirmed-by/scope hash). Optional so
-    # older states without the record still validate.
     authorization: Optional[Dict[str, Any]] = None
+    partial_failure: bool = False
+    failed_stages: List[str] = []
 
 
 class AssessmentStatusResponse(BaseModel):

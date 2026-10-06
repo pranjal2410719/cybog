@@ -179,13 +179,13 @@ async def push_progress_loop(
             # State file momentarily unavailable — check if assessment exists
             service = get_cybog_service()
             try:
-                service.get_assessment(assessment_id)  # raises if truly non-existent
+                await service.get_assessment(assessment_id)  # raises if truly non-existent
                 # Assessment exists; snapshot is momentarily unreadable, retry later
                 logger.warning(
                     f"Snapshot file momentarily unreadable for {assessment_id}; "
                     "retrying on next tick"
                 )
-            except HTTPException:
+            except (HTTPException, FileNotFoundError):
                 # Assessment truly does not exist — send NOT_FOUND
                 await manager.send_to_assessment(
                     assessment_id, not_found_snapshot(assessment_id)

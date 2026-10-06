@@ -47,21 +47,14 @@ export interface AssessmentResponse {
   assessment_id: string;
   name?: string | null;
   status: string;
+  stage?: string | null;
   created_at: string;
-  /**
-   * Emitted by `_format_assessment_response`, but NOT declared on the backend
-   * `AssessmentResponse` schema, so pydantic strips it. Treat as optional.
-   */
   updated_at?: string;
   profile: string;
   artifact_root: string;
   progress: AssessmentProgress;
   findings_count: number;
   pending_validation_count: number;
-  /**
-   * T5 authorization record. Absent on pre-T5 states; CREATED assessments
-   * carry status PENDING until the owner confirms.
-   */
   authorization?: {
     required: boolean;
     status: string;
@@ -70,13 +63,10 @@ export interface AssessmentResponse {
     authorized_at?: string | null;
     scope_sha256?: string | null;
   } | null;
+  partial_failure: boolean;
+  failed_stages: string[];
 }
 
-/**
- * Shape returned by `GET /assessments/{id}/status` and `GET /progress`, which
- * both serve `backend/app/services/progress_snapshot.build_progress_snapshot`.
- * It is a pure projection of persisted `AssessmentState` — nothing estimated.
- */
 export interface ProgressSnapshot {
   type: string;
   assessment_id: string;
@@ -90,7 +80,6 @@ export interface ProgressSnapshot {
   targets_completed: number;
   targets_failed: number;
   stages: LiveStage[];
-  /** Stages with >=1 RUNNING job. There is no single "current stage". */
   running_stages: string[];
   jobs: LiveJob[];
   jobs_total: number;
@@ -104,7 +93,6 @@ export interface ProgressSnapshot {
   updated_at: string;
   partial_failure: boolean;
   failed_stages: string[];
-  /** Monotonic persistence version (T4). T15 reconcile discards stale snapshots. */
   state_version?: number | null;
 }
 
@@ -118,7 +106,6 @@ export interface LiveTarget {
   findings_count: number;
 }
 
-/** Per-stage rollup of `StageJob` rows, not an emitted event. */
 export interface LiveStage {
   stage: string;
   status: string;
@@ -139,7 +126,6 @@ export interface LiveJob {
   error?: string | null;
 }
 
-/** Shape of the `{"type":"progress", ...}` WebSocket push body. */
 export type ProgressSocketMessage = ProgressSnapshot | SocketErrorMessage;
 
 export interface SocketErrorMessage {
@@ -162,6 +148,8 @@ export interface AssessmentStatusResponse {
 export interface FindingResponse {
   finding_id: string;
   dedup_key: string;
+  finding_type?: string;
+  template_id?: string | null;
   title: string;
   description?: string | null;
   severity: string;
@@ -176,19 +164,18 @@ export interface FindingResponse {
   evidence: FindingEvidence[];
 }
 
-/** One evidence row of a finding, as serialized by the backend service. */
 export interface FindingEvidence {
   evidence_id: string;
   tool: string;
   raw_output: string;
+  request?: string | null;
+  response?: string | null;
   analyst_notes?: string | null;
   validation_result?: string | null;
   collected_at: string;
-  /** Present on some evidence records; absent from the serializer today. */
   reproduction?: string | null;
 }
 
-/** Backend `ValidationStatus` values. `ALLOWED_TRANSITIONS` is authoritative. */
 export const VALIDATION_STATUSES = [
   'DISCOVERED',
   'NEEDS_VALIDATION',
@@ -203,11 +190,6 @@ export const VALIDATION_STATUSES = [
 
 export type ValidationStatus = (typeof VALIDATION_STATUSES)[number];
 
-/**
- * Mirror of `cybog.models.finding.TERMINAL_VALIDATION_STATUSES`: confirm and
- * reject are rejected from these states by `Finding.transition_to`, so the UI
- * disables those actions rather than sending a request that must fail.
- */
 export const TERMINAL_VALIDATION_STATUSES: ReadonlySet<string> = new Set([
   'VALIDATED',
   'FALSE_POSITIVE',
@@ -239,7 +221,6 @@ export interface ReportsResponse {
   reports: ReportEntry[];
 }
 
-/** `pending` | `in_progress` | `completed` | `failed` (backend constants). */
 export interface ExportStatusResponse {
   export_id: string;
   assessment_id: string;
@@ -259,11 +240,8 @@ export interface FindingValidationRequest {
 
 export interface ExportRequest {
   format?: string;
-  /** Include raw stage output in the archive. Defaults to true. */
   include_raw?: boolean;
-  /** Include per-finding evidence files. Defaults to true. */
   include_evidence?: boolean;
-  /** Only include findings in VALIDATED or REPORTABLE state. Defaults to false. */
   include_validated_only?: boolean;
 }
 

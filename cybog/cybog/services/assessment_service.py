@@ -279,8 +279,9 @@ class AssessmentService:
     def _terminal_status(self, state: AssessmentState) -> AssessmentStatus:
         """
         An assessment is only COMPLETED when every finding reached a terminal
-        validation state. Otherwise it is AWAITING_VALIDATION — reporting
-        COMPLETED with unresolved findings would misclassify them.
+        validation state AND no stages failed. If stages failed, the assessment
+        is PARTIALLY_COMPLETED. If findings await validation, it is
+        AWAITING_VALIDATION.
         """
         if state.has_pending_validation():
             pending = state.pending_validation_count()
@@ -288,6 +289,14 @@ class AssessmentService:
                 f"Pipeline finished with {pending} finding(s) awaiting validation"
             )
             return AssessmentStatus.AWAITING_VALIDATION
+        # Check for failed stages: if any stage job failed, the assessment
+        # is partially completed, not fully completed.
+        failed_stages = state.get_failed_jobs()
+        if failed_stages:
+            self._log.info(
+                f"Pipeline finished with failed stages, marking PARTIALLY_COMPLETED"
+            )
+            return AssessmentStatus.PARTIALLY_COMPLETED
         return AssessmentStatus.COMPLETED
 
     def _auto_generate_reports(self, state: AssessmentState, art_mgr: ArtifactManager) -> None:
