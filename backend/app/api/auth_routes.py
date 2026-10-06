@@ -44,6 +44,7 @@ async def get_optional_current_user(
         return None
         
     return User(
+        id=db_user.id,
         uid=db_user.uid,
         name=db_user.name,
         role=db_user.role,
@@ -79,6 +80,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     user = User(
+        id=db_user.id,
         uid=db_user.uid,
         name=db_user.name,
         role=db_user.role,

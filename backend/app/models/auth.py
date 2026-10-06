@@ -32,6 +32,7 @@ class Role(str, Enum):
 class User(BaseModel):
     """A registered user identified by a stable ``uid`` (``USR-XXXX``)."""
 
+    id: str
     uid: str
     name: str
     role: Role

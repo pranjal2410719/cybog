@@ -598,6 +598,10 @@ def client(output_root: Path, assessment_id: str):
         def __getattr__(self, name):
             return getattr(self.exports, name)
 
+        async def get_assessment(self, assessment_id: str):
+            from cybog.models.assessment import Assessment, AssessmentStatus
+            return {"assessment_id": assessment_id, "status": "COMPLETED", "owner_id": "test-internal-id"}
+
         def get_export_status(self, export_id):
             return self.exports.get_status(export_id)
 

@@ -37,7 +37,8 @@ _running_tasks: Dict[str, "asyncio.Task[Any]"] = {}
 KNOWN_REPORT_FILES = frozenset({
     "report.json", "report_unverified.json", "report_verified.json",
     "findings.jsonl", "findings_unverified.jsonl", "findings_verified.jsonl",
-    "report.html", "report_unverified.html", "report_verified.html"
+    "report.html", "report_unverified.html", "report_verified.html",
+    "report.pdf", "report_unverified.pdf", "report_verified.pdf"
 })
 
 # Report artifacts live in a single directory named after the assessment, so
@@ -282,7 +283,6 @@ class CybogIntegrationService:
             )
 
         # Set status to QUEUED immediately
-        from cybog.models.assessment import AssessmentStatus
         state.assessment.status = AssessmentStatus.QUEUED
         self._service.save_state(state)
 

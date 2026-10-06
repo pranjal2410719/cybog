@@ -70,7 +70,7 @@ def _make_job(
     result_count: int = 0,
 ) -> StageJob:
     job = StageJob(
-        assessment_id=assessment_id,
+        assessment_id=assessment_id, owner_id="test-internal-id",
         target_id=target_id,
         target_domain=domain,
         stage=stage,
@@ -94,7 +94,7 @@ def _write_state(
 ) -> Path:
     """Persist a real AssessmentState at <root>/<assessment_id>/state.json."""
     assessment = Assessment(
-        assessment_id=assessment_id,
+        assessment_id=assessment_id, owner_id="test-internal-id",
         profile="standard",
         target_input_file="targets.txt",
         scope_file="authorized_scope.txt",

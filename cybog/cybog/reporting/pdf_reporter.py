@@ -29,22 +29,15 @@ class PDFReporter:
         filename = f"report_{status_suffix}.pdf"
         path = output_dir / filename
         
-        try:
-            from weasyprint import HTML
-            HTML(string=html_content).write_pdf(path)
-        except ImportError:
-            logging.getLogger(__name__).warning("weasyprint not installed, falling back to dummy PDF")
-            # Fallback for systems without weasyprint
-            path.write_text(f"PDF Output Placeholder\n\nEnsure weasyprint is installed to generate real PDFs.\n\nOriginal HTML:\n{html_content}", encoding="utf-8")
+        from weasyprint import HTML
+        HTML(string=html_content).write_pdf(path)
 
-        # Symlink/copy for backwards compatibility
-        symlink_path = output_dir / "report.pdf"
-        if symlink_path.exists():
-            symlink_path.unlink()
-        try:
-            symlink_path.symlink_to(filename)
-        except OSError:
-            import shutil
-            shutil.copy2(path, symlink_path)
+        # Keep a copy for backwards compatibility
+        compat_path = output_dir / "report.pdf"
+        if compat_path.exists() or compat_path.is_symlink():
+            compat_path.unlink()
+        
+        import shutil
+        shutil.copy2(path, compat_path)
             
         return path

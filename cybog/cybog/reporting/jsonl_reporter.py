@@ -22,13 +22,12 @@ class JSONLReporter:
         ]
         path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         
-        # Keep a symlink or copy for backwards compatibility
-        symlink_path = output_dir / "findings.jsonl"
-        if symlink_path.exists():
-            symlink_path.unlink()
-        try:
-            symlink_path.symlink_to(filename)
-        except OSError:
-            symlink_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        # Keep a copy for backwards compatibility
+        compat_path = output_dir / "findings.jsonl"
+        if compat_path.exists() or compat_path.is_symlink():
+            compat_path.unlink()
+        
+        import shutil
+        shutil.copy2(path, compat_path)
             
         return path

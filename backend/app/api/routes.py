@@ -29,7 +29,6 @@ from app.services.auth_service import (
     Role,
     AuditEvent,
     audit_log,
-    get_current_user as _resolve_user,
     require_role,
 )
 
@@ -581,6 +580,7 @@ _REPORT_MEDIA_TYPES = {
     ".json": "application/json",
     ".jsonl": "application/jsonl",
     ".html": "text/html",
+    ".pdf": "application/pdf",
 }
 
 # Allowlist for valid report filenames (prevents path traversal)

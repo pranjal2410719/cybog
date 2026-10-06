@@ -45,6 +45,7 @@ fi
 
 # ---------- 4. Run Alembic migrations (creates backend/data/cybog.db) ----------
 echo "🗄️  Applying Alembic migrations (idempotent)…"
+mkdir -p "${REPO_ROOT}/backend/data"
 python "${REPO_ROOT}/run_alembic.py"
 
 # ---------- 5. Ensure the DB file exists (defensive check) ----------
