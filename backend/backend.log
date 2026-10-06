@@ -1,0 +1,32 @@
+INFO:     Will watch for changes in these directories: ['/home/dev/Downloads/cybog/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [505841] using WatchFiles
+INFO:     Started server process [505846]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:45158 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54958 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54962 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54964 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54746 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54760 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54768 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54782 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54792 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40416 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40420 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40434 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48156 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48168 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48178 - "GET /api/v1/assessments/queue/validation/pending HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:48192 - "GET /api/v1/assessments/queue/validation/pending HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:34144 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34146 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56350 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56356 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56360 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56370 - "GET /api/v1/assessments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50610 - "POST /api/v1/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50622 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50626 - "GET /api/v1/users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50628 - "GET /api/v1/users HTTP/1.1" 200 OK
