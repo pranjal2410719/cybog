@@ -145,7 +145,7 @@ async def _load_snapshot(assessment_id: str) -> Optional[Dict[str, object]]:
     """
     service = get_cybog_service()
     try:
-        state = service.load_state(assessment_id)
+        state = await asyncio.to_thread(service.load_state, assessment_id)
         return build_progress_snapshot(state, assessment_id)
     except FileNotFoundError:
         return None
